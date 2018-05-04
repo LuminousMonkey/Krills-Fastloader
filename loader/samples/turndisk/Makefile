@@ -77,8 +77,10 @@ endif
 
 ifneq ($(USE_PLUS4EMU),0)
 EMU          = $(PLUS4EMU) -disk
+EMU70        = $(PLUS4EMU) -disk
 else
 EMU          = $(VICE) -drive8type 1541 -drive9type 0 -autostart
+EMU70        = $(VICE) -drive8type 1570 -drive9type 0 -autostart
 endif
 
 
@@ -100,7 +102,7 @@ endif
 CAT          = cat
 
 
-.PHONY: default loader assemble link compress diskimage run clean distclean wipe
+.PHONY: default loader assemble link compress diskimages run clean distclean wipe
 .PHONY: tellarch
 
 
@@ -112,21 +114,25 @@ LOADER       = $(BUILDDIR)/loader-$(_PLATFORM_).a
 RESOURCESDIR = ../resources
 PIC1         = $(INTERMDIR)/sheba.bin
 PIC2         = $(INTERMDIR)/prlogo.bin
+ID_A         = $(INTERMDIR)/id_a.bin
+ID_B         = $(INTERMDIR)/id_b.bin
 
-NAME         = minexample
+NAME         = turndisk
 
 SOURCE       = $(NAME).s
 LOADERCFG    = loaderconfig.inc
 ASSEMBLE     = $(INTERMDIR)/$(NAME)-$(_PLATFORM_).o
 LINK         = $(INTERMDIR)/$(NAME)-uncompressed-$(_PLATFORM_).prg
 COMPRESS     = $(INTERMDIR)/$(NAME)-$(_PLATFORM_).prg
-DISKIMAGE    = $(BUILDDIR)/$(NAME)-$(_PLATFORM_).d64
+DISKIMAGE_A  = $(BUILDDIR)/$(NAME)-$(_PLATFORM_)-a.d64
+DISKIMAGE_B  = $(BUILDDIR)/$(NAME)-$(_PLATFORM_)-b.d64
+DISKIMAGES   = $(DISKIMAGE_A) $(DISKIMAGE_B)
 
 AS_FLAGS     = -I ../../../shared -I ../../include -I $(LOADER) -D EXTCONFIGPATH --cpu 6502X
 PU_FLAGS     = -d -l 0x1000 -x 0x1000 -i 0 
 
 
-default: diskimage
+default: diskimages
 
 
 tellarch:
@@ -167,22 +173,41 @@ else
 endif
 
 
-diskimage: $(DISKIMAGE)
+diskimages: $(DISKIMAGES)
 
-$(DISKIMAGE): $(COMPRESS) $(PIC1) $(PIC2)
-	$(C1541) -format "normal is boring,+h" d64 $@
+$(ID_A):
+	$(PRINTF) "\x00\x04A" > $@
+
+$(ID_B):
+	$(PRINTF) "\x00\x04B" > $@
+
+$(DISKIMAGE_A): $(COMPRESS) $(PIC1) $(ID_A)
+	$(C1541) -format "normal is boring,+a" d64 $@
 	$(C1541) -attach $@ \
 	 -write $(COMPRESS) "$(NAME)" \
-	 -write $(PIC1) "pic1" \
+	 -write $(ID_A) "id a" \
+	 -write $(PIC1) "pic1"
+
+$(DISKIMAGE_B): $(PIC2) $(ID_B)
+	$(C1541) -format "normal is boring,+b" d64 $@
+	$(C1541) -attach $@ \
+	 -write $(COMPRESS) "$(NAME)" \
+	 -write $(ID_B) "id b" \
 	 -write $(PIC2) "pic2"
 
 
 ifneq ($(USE_YAPE),0)
-run: $(DISKIMAGE)
-	$(YAPE) "..\..\build\$^"
+run: diskimages
+	$(YAPE) "..\..\build\$(DISKIMAGE_A)"
+
+run70: diskimages
+	$(YAPE) "..\..\build\$(DISKIMAGE_A)"
 else
-run: $(DISKIMAGE)
-	$(EMU) $^
+run: diskimages
+	$(EMU) $(DISKIMAGE_A)
+
+run70: diskimages
+	$(EMU70) $(DISKIMAGE_A)
 endif
 
 
@@ -191,7 +216,7 @@ $(INTERMDIR)/%.bin: $(RESOURCESDIR)/%.bin
 
 
 clean:
-	-$(RM) $(ASSEMBLE) $(LINK) $(COMPRESS) $(DISKIMAGE)
+	-$(RM) $(ASSEMBLE) $(LINK) $(COMPRESS) $(DISKIMAGES)
 	-$(RMDIR) $(INTERMDIR)
 	-$(RMDIR) $(BUILDDIR)
 

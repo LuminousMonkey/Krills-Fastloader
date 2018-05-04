@@ -10,6 +10,8 @@
 
 ; crunch using the -c0 switch
 
+.define OLD_VERSION 0; pre 2004/3/24, this includes http://www.cs.tut.fi/~albert/Dev/pucrunch/pucrunch_x86.zip as of 2013/4/9
+
 LZPOS  = DECOMPVARS + $00
 bitstr = DECOMPVARS + $02
 
@@ -136,13 +138,21 @@ longrle:      ldx #2       ; ** PARAMETER  111111xxxxxx
 chrcode:      jsr getval   ; Byte Code, X = 0
               tax          ; this is executed most of the time anyway
               lda table-1,x; Saves one jump if done here (loses one txa)
-              
-              cpx #16 ;32  ; 31-32 -> C clear, 32-32 -> C set..
+
+.if OLD_VERSION
+              cpx #32      ; 31-32 -> C clear, 32-32 -> C set..
+.else
+              cpx #16      ; 15-16 -> C clear, 16-16 -> C set..
+.endif
               bcc @1       ; 1..31, we got the right byte from the table
 
               ; Ranks 32..64 (11111°xxxxx), get byte..
               txa          ; get back the value (5 valid bits)
-              ldx #4 ;3
+.if OLD_VERSION
+              ldx #3
+.else
+              ldx #4
+.endif
               jsr getbits  ; get 3 more bits to get a full byte, X = 0
 
 @1:           ldx LZPOS    ; xstore - get length LSB
@@ -236,4 +246,8 @@ putch:        sta $aaaa    ; ** parameter
               inc OUTPOS+1 ; ZP
 @0:           rts
 
-table:        .res 15,0; 31,0
+.if OLD_VERSION
+table:        .res 31,0
+.else
+table:        .res 15,0
+.endif

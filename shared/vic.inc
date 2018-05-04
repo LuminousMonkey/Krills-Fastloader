@@ -225,7 +225,7 @@ loop:       cmp VIC2_RASTERLINE
             lda #VIC2_MAKE_ADDR(screen, bitmap)
             sta VIC2_ADDR
             lda CIA2_PRA
-            and #~VIC2_BANK_MASK
+            and #.lobyte(~VIC2_BANK_MASK)
             ora #VIC2_MAKE_BANK(bitmap)
             sta CIA2_PRA
 .endmacro

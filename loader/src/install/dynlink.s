@@ -355,6 +355,12 @@ doimport:   jsr importlib
             sta IBASIN + $00
             lda temp1 + 0
             bcc :+
+			pha
+			txa
+			tay
+			pla
+			tax
+            lda #diskio::status::DYNLINK_FALLBACK_FAILED
             rts
 :           lda #diskio::status::DYNLINK_FALLBACK_USED
            ;clc
@@ -689,7 +695,7 @@ findfunc:   eor #diskio::FUNCTION_DESIRED
             tay
             clc
             lda (pointer4),y; flag/offset table: .hibyte(offset)
-            and #~FUNCTION_IMPORTED
+            and #.lobyte(~FUNCTION_IMPORTED)
             adc pointer1 + 1; .hibyte(callerdata)
             sta pointer2 + 1; .hibyte(function request)
             lda pointer1 + 0; .lobyte(callerdata)
@@ -706,7 +712,7 @@ findfunc:   eor #diskio::FUNCTION_DESIRED
 
             ; the function kind matches,
             ; so now, check features
-funcfound:  and #~diskio::FUNCTION_DESIRED
+funcfound:  and #.lobyte(~diskio::FUNCTION_DESIRED)
             sta temp2; function type
             sec; skip function type
             tya
@@ -835,7 +841,7 @@ featsdone:  clc
             ora (pointer4),y; flag/offset table
             sta (pointer4),y; flag/offset table
 
-            lda #-1
+            lda #.lobyte(-1)
             cmp pointer3 + 0
             bne :+
             cmp pointer3 + 1
@@ -1052,7 +1058,7 @@ readloop:   tya
 :           dex
             bne readloop
             dey
-            cpy #-$01
+            cpy #.lobyte(-$01)
             bne readloop
 
             lda readsize + 0

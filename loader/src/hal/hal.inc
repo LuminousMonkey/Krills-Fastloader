@@ -26,19 +26,19 @@ _HAL_INC_ = 1
             BRANCH_IF_DATA_IN_CLEAR to
 .endmacro
 
-.macro BRANCH_IF_READY to
+.macro BRANCH_IF_BLOCK_READY to
             BRANCH_IF_CLK_IN_SET to
 .endmacro
 
-.macro BRANCH_IF_NOT_READY to
+.macro BRANCH_IF_BLOCK_NOT_READY to
             BRANCH_IF_CLK_IN_CLEAR to
 .endmacro
 
-.macro WAITREADY
-:           BRANCH_IF_NOT_READY :-
+.macro WAIT_FOR_BLOCK_READY
+:           BRANCH_IF_BLOCK_NOT_READY :-
 .endmacro
 
-.macro WAITREADY_KERNAL
+.macro WAIT_FOR_BLOCK_READY_KERNAL
 :           BRANCH_IF_CLK_IN_CLEAR :-
 .endmacro
 

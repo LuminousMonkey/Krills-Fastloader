@@ -93,7 +93,7 @@ getfilenam: jsr dgetbyte; get filename
     .endif
 .endif; !LOAD_ONCE
 
-.if (::FILESYSTEM = FILESYSTEMS::TRACK_SECTOR) || LOAD_ONCE
+.if (::FILESYSTEM = FILESYSTEMS::TRACK_SECTOR) | LOAD_ONCE
             ; check for illegal track or sector
             ldy FILETRACK
             beq toillegal + $00
@@ -106,30 +106,25 @@ getfilenam: jsr dgetbyte; get filename
 toillegal:  sec
             jmp illegalts
 :
-.endif; (::FILESYSTEM = FILESYSTEMS::TRACK_SECTOR) || LOAD_ONCE
+.endif; (::FILESYSTEM = FILESYSTEMS::TRACK_SECTOR) | LOAD_ONCE
 
-            lda #OPC_RTS; disable retry
-            sta dsctcmps; on ID mismatch
+            lda #OPC_BIT_ZP; disable error
+            sta cmpidswtch ; on ID mismatch
 spinuploop: ldy #ANYSECTOR; get any block on the current track, no sector link sanity check,
             jsr getblcurtr; don't store id, check after return
             bcs spinuploop; retry until any block has been loaded correctly
 
-           ;clc
-            beq :+; branch if disk id is the same, if not, re-read the dir
-            sec; set the new disk flag when disks have been changed
-.if LOAD_ONCE
-:           ror DISKCHANGED
-.else
-:           lda #OPC_BNE; enable retry
-            ror DISKCHANGED
-            sta dsctcmps; on ID mismatch
+.if LOAD_ONCE = 0
+            lda #OPC_BNE  ; enable error
+            sta cmpidswtch; on ID mismatch
 .endif
-            beq samedisk; branches to samedisk if no disk changes have happened
-
-newdisk:    ; a new disk has been inserted
 
 .if (::FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME) && (!LOAD_ONCE)
 
+            lda DISKCHANGED
+            beq samedisk
+
+newdisk:    ; a new disk has been inserted
             lda #DIRTRACK
             ldy #DIRSECTOR
             jsr getblkstid; store id, sector link sanity check
@@ -151,10 +146,7 @@ filldirbuf: ldx #LOAD_FILE_VALUE
             stx WRAPFILEINDEX
             inx
             stx NUMFILES
-nextdirsct: jsr checkchg; does not change y
-            bne newdisk; check light sensor and start over if its state changed
-
-            ; y contains the current dir sector number
+nextdirsct: ; y contains the current dir sector number
             lda #DIRTRACK
             jsr getblkchid; compare id, sector link sanity check
             bcs newdisk; start over on error
@@ -232,7 +224,7 @@ nextfile:   dex
             jmp filenotfnd
 
             ; must not change y
-fnamehash:  ldx #-$01 - LOAD_FILE_VALUE - 1
+fnamehash:  ldx #.lobyte(-$01 - LOAD_FILE_VALUE - 1)
 :           stx GCRBUFFER + $00
             jsr gcrdecode
             ldx GCRBUFFER + $00
@@ -289,7 +281,7 @@ findfile:   lda FILENAMEHASH0
             lda CURRDIRBLOCKSECTOR
             sta CYCLESTARTENDSECTOR
             sta NEXTDIRBLOCKSECTOR
-            jsr ddliteon; passes errorret, returns with carry set
+            jsr busyledon; passes errorretlo, returns with carry set
             lda DIRTRACKS,x
             ldy DIRSECTORS,x
 
@@ -297,8 +289,6 @@ findfile:   lda FILENAMEHASH0
             ; here - unfortunately, there is no memory left for it
 
 .else; ::FILESYSTEM = FILESYSTEMS::TRACK_SECTOR && (!LOAD_ONCE)
-
-            ; a new disk has been inserted
 
     .if LOAD_ONCE
 :           lda CURTRACK
@@ -309,6 +299,8 @@ findfile:   lda FILENAMEHASH0
             sta DISKCHANGED
             bcc spinuploop
     .else
+            ; always consider disk as a new disk
+
             ; store new disk id
 :           lda CURTRACK
             ldy #ANYSECTOR; no sector link sanity check
@@ -318,16 +310,15 @@ findfile:   lda FILENAMEHASH0
             sta DISKCHANGED
     .endif; !LOAD_ONCE
 
-samedisk:
     .if LOAD_ONCE
-            lda #OPC_BNE; enable retry
-            sta dsctcmps; on ID mismatch
+            lda #OPC_BNE  ; enable error
+            sta cmpidswtch; on ID mismatch
     .endif
-            jsr ddliteon; passes errorret, returns with carry set
+            jsr busyledon; passes errorretlo, returns with carry set
             lda FILETRACK
             ldy FILESECTOR
 
-.endif; !(::FILESYSTEM = FILESYSTEMS::TRACK_SECTOR) || LOAD_ONCE
+.endif; !(::FILESYSTEM = FILESYSTEMS::TRACK_SECTOR) | LOAD_ONCE
 
             ; a contains the file's starting track here
             ; y contains the file's starting sector here
@@ -358,7 +349,7 @@ scantrloop: lda #OPC_BIT_ZP; only fetch the first few bytes to track the block l
             ; however, sector link sanity is checked
             ldy #ANYSECTORSANELINK; sector link sanity check
             sty REQUESTEDSECTOR
-            jsr getblkscan
+            jsr getblkscan; when loading by T&S: 1st rev: store id, 2nd rev: compare id
             bcs scantrloop; branch until fetch successful
            ;ldx LOADEDSECTOR
            ;lda LINKTRACK; illegal tracks are checked after
@@ -399,15 +390,25 @@ scantrloop: lda #OPC_BIT_ZP; only fetch the first few bytes to track the block l
             sty SECTORCOUNT; amount of the file's blocks on the current track
 
 blockloop:  ldy #UNPROCESSEDSECTOR; find any yet unprocessed block belonging to the file
-            bcc :+; carry clear: load out-of-order
-            ldy LINKSECTOR; load the next block in order
-:           sty SECTORTOFETCH
+            bcc loadooo; carry clear: load out-of-order
+            ldy LINKSECTOR; load the next block in order, this happens only for the first file block
 
+.if ::FILESYSTEM = FILESYSTEMS::TRACK_SECTOR
+            ; for the first file block, store ID
+            sty SECTORTOFETCH
+:           lda CURTRACK
+            ldy SECTORTOFETCH; negative: any unprocessed sector, positive: this specific sector; sector link sanity check
+            jsr getblkstid   ; read any of the files's sectors on the current track, store id
+            bcs :-           ; retry until a block has been successfully loaded
+            bcc transfer
+.endif; ::FILESYSTEM = FILESYSTEMS::TRACK_SECTOR
+
+loadooo:    sty SECTORTOFETCH
 :           ldy SECTORTOFETCH; negative: any unprocessed sector, positive: this specific sector; sector link sanity check
             jsr getblcurtr   ; read any of the files's sectors on the current track, compare id
             bcs :-           ; retry until a block has been successfully loaded
 
-            ; send the block over
+transfer:   ; send the block over
            ;ldx LOADEDSECTOR
             ldy #SECTORISPROCESSED; $ff
             sty TRACKLINKTAB,x; mark the loaded block as processed
@@ -435,7 +436,13 @@ blockloop:  ldy #UNPROCESSEDSECTOR; find any yet unprocessed block belonging to 
             tax
             pla; next track
             ; carry-flag is cleared if the next block may be loaded out of order
+.if ::FILESYSTEM = FILESYSTEMS::TRACK_SECTOR
+            beq :+
+            jmp trackloop; process next track
+:
+.else
             bne trackloop; process next track
+.endif; ::FILESYSTEM = FILESYSTEMS::TRACK_SECTOR
 
             ; loading is finished
 
@@ -537,12 +544,12 @@ sendloop:   ldx LONIBBLES,y               ; 4
 
             sta VIA1_PRB                  ; 4
             asl                           ; 2
-            and #~ATNA_OUT                ; 2
+            and #.lobyte(~ATNA_OUT)       ; 2
             sta VIA1_PRB                  ; 4
             lda SENDGCRTABLE,x            ; 4 - zp access
             sta VIA1_PRB                  ; 4
             asl                           ; 2
-            and #~ATNA_OUT                ; 2
+            and #.lobyte(~ATNA_OUT)       ; 2
             sta VIA1_PRB                  ; 4
                                           ; = 28
 
@@ -603,7 +610,7 @@ dsendcmp:   cpy #$00                      ; 2
             dec SECTORCOUNT
             bne :+      ; pull DATA_OUT high when changing tracks
 drwaitrkch: ldy #CLK_OUT | DATA_OUT; flag track change
-:           clc; load blocks out of order
+:           clc; out-of-order flag
             ; it is only possible to load the file's first blocks in order and then switch
             ; to loading out of order - switching back to loading in order will cause
             ; the stream code to hiccup and thus faulty file data to be loaded

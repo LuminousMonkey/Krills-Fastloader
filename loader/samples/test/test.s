@@ -39,7 +39,7 @@ IRQ_SLACK = $00
     .endif
 
 NONBLOCK_YOFFSET = $00
-LOAD_TO_UPPER_MEM = 1
+LOAD_TO_UPPER_MEM = 1; always, as $8000..$ffff is himem to load under
 .else
 NONBLOCK_YOFFSET = $04
 LOAD_TO_UPPER_MEM = LOAD_UNDER_D000_DFFF
@@ -62,11 +62,13 @@ COLRAM = __COLRAMHI_LOAD__
     .endif
 
     .if UNINSTALL_RUNS_DINSTALL
+; use BITMAP segment for install buffer
 .segment "BITMAP"
 .import __BITMAP_LOAD__
 INSTALLBUFFER = __BITMAP_LOAD__
     .endif
-.else
+
+.else; !LOAD_TO_UPPER_MEM
 
 .segment "BITMAP"
 .import __BITMAP_LOAD__
@@ -77,6 +79,7 @@ BITMAP = __BITMAP_LOAD__
 COLRAM = __COLRAM_LOAD__
 
     .if UNINSTALL_RUNS_DINSTALL
+; use BITMAPHI segment for install buffer
 .segment "BITMAPHI"
 .import __BITMAPHI_LOAD__
 INSTALLBUFFER = __BITMAPHI_LOAD__
@@ -219,299 +222,360 @@ TESTNAMEPOS = $0c; x coord
 
     .if LOAD_TO_UPPER_MEM
 
-    .define X_SHEBA_UNCOMPRESSED_1541 24
-    .define Y_SHEBA_UNCOMPRESSED_1541 0
-
-    .define X_PRHEI_UNCOMPRESSED_1541 30
-    .define Y_PRHEI_UNCOMPRESSED_1541 0
-
-
-    .define X_SHEBA_UNCOMPRESSED_1571 15
-    .define Y_SHEBA_UNCOMPRESSED_1571 0
-
-    .define X_PRHEI_UNCOMPRESSED_1571 19
-    .define Y_PRHEI_UNCOMPRESSED_1571 0
-
-
-    .define X_SHEBA_UNCOMPRESSED_1581 $25
-    .define Y_SHEBA_UNCOMPRESSED_1581 $25
-
-    .define X_PRHEI_UNCOMPRESSED_1581 $24
-    .define Y_PRHEI_UNCOMPRESSED_1581 $1d
-
-
-        .if DECOMPRESSOR = DECOMPRESSORS::PUCRUNCH
-
-        .define X_SHEBA_COMPRESSED_1541 26
-        .define Y_SHEBA_COMPRESSED_1541 0
-
-        .define X_PRHEI_COMPRESSED_1541 32
-        .define Y_PRHEI_COMPRESSED_1541 0
-
-        .define X_BOTH_COMPRESSED_1541  36
-        .define Y_BOTH_COMPRESSED_1541  0
-
-
-        .define X_SHEBA_COMPRESSED_1571 16
-        .define Y_SHEBA_COMPRESSED_1571 0
-
-        .define X_PRHEI_COMPRESSED_1571 20
-        .define Y_PRHEI_COMPRESSED_1571 0
-
-        .define X_BOTH_COMPRESSED_1571  22
-        .define Y_BOTH_COMPRESSED_1571  0
-
-
-        .define X_SHEBA_COMPRESSED_1581 $2b
-        .define Y_SHEBA_COMPRESSED_1581 $04
-
-        .define X_PRHEI_COMPRESSED_1581 $2c
-        .define Y_PRHEI_COMPRESSED_1581 $0a
-
-        .define X_BOTH_COMPRESSED_1581  $2c
-        .define Y_BOTH_COMPRESSED_1581  $21
-
-        .elseif DECOMPRESSOR = DECOMPRESSORS::BYTEBOOZER
-
-        .define X_SHEBA_COMPRESSED_1541 27
-        .define Y_SHEBA_COMPRESSED_1541 0
-
-        .define X_PRHEI_COMPRESSED_1541 33
-        .define Y_PRHEI_COMPRESSED_1541 0
-
-        .define X_BOTH_COMPRESSED_1541  37
-        .define Y_BOTH_COMPRESSED_1541  0
-
-
-        .define X_SHEBA_COMPRESSED_1571 51
-        .define Y_SHEBA_COMPRESSED_1571 0
-
-        .define X_PRHEI_COMPRESSED_1571 55
-        .define Y_PRHEI_COMPRESSED_1571 0
-
-        .define X_BOTH_COMPRESSED_1571  57
-        .define Y_BOTH_COMPRESSED_1571  0
-
-
-        .define X_SHEBA_COMPRESSED_1581 $2b
-        .define Y_SHEBA_COMPRESSED_1581 $0f
-
-        .define X_PRHEI_COMPRESSED_1581 $2c
-        .define Y_PRHEI_COMPRESSED_1581 $10
-
-        .define X_BOTH_COMPRESSED_1581  $23
-        .define Y_BOTH_COMPRESSED_1581  $15
-
-        .elseif DECOMPRESSOR = DECOMPRESSORS::LEVELCRUSH
-
-        .define X_SHEBA_COMPRESSED_1541 28
-        .define Y_SHEBA_COMPRESSED_1541 0
-
-        .define X_PRHEI_COMPRESSED_1541 34
-        .define Y_PRHEI_COMPRESSED_1541 0
-
-        .define X_BOTH_COMPRESSED_1541  38
-        .define Y_BOTH_COMPRESSED_1541  0
-
-
-        .define X_SHEBA_COMPRESSED_1571 17
-        .define Y_SHEBA_COMPRESSED_1571 0
-
-        .define X_PRHEI_COMPRESSED_1571 21
-        .define Y_PRHEI_COMPRESSED_1571 0
-
-        .define X_BOTH_COMPRESSED_1571  23
-        .define Y_BOTH_COMPRESSED_1571  0
-
-
-        .define X_SHEBA_COMPRESSED_1581 $2b
-        .define Y_SHEBA_COMPRESSED_1581 $1b
-
-        .define X_PRHEI_COMPRESSED_1581 $2c
-        .define Y_PRHEI_COMPRESSED_1581 $16
-
-        .define X_BOTH_COMPRESSED_1581  $23
-        .define Y_BOTH_COMPRESSED_1581  $26
-
-        .elseif DECOMPRESSOR = DECOMPRESSORS::EXOMIZER
-
-        .define X_SHEBA_COMPRESSED_1541 29
-        .define Y_SHEBA_COMPRESSED_1541 0
-
-        .define X_PRHEI_COMPRESSED_1541 35
-        .define Y_PRHEI_COMPRESSED_1541 0
-
-        .define X_BOTH_COMPRESSED_1541  40
-        .define Y_BOTH_COMPRESSED_1541  0
-
-
-        .define X_SHEBA_COMPRESSED_1571 52
-        .define Y_SHEBA_COMPRESSED_1571 0
-
-        .define X_PRHEI_COMPRESSED_1571 56
-        .define Y_PRHEI_COMPRESSED_1571 0
-
-        .define X_BOTH_COMPRESSED_1571  58
-        .define Y_BOTH_COMPRESSED_1571  0
-
-
-        .define X_SHEBA_COMPRESSED_1581 $2b
-        .define Y_SHEBA_COMPRESSED_1581 $27
-
-        .define X_PRHEI_COMPRESSED_1581 $2c
-        .define Y_PRHEI_COMPRESSED_1581 $1c
-
-        .define X_BOTH_COMPRESSED_1581  $2d
-        .define Y_BOTH_COMPRESSED_1581  $0a
-
-        .endif
-
-    .else; !LOAD_TO_UPPER_MEM
-
     .define X_SHEBA_UNCOMPRESSED_1541 7
     .define Y_SHEBA_UNCOMPRESSED_1541 0
 
-    .define X_PRHEI_UNCOMPRESSED_1541 13
+    .define X_PRHEI_UNCOMPRESSED_1541 9
     .define Y_PRHEI_UNCOMPRESSED_1541 0
 
 
     .define X_SHEBA_UNCOMPRESSED_1571 7
     .define Y_SHEBA_UNCOMPRESSED_1571 0
 
-    .define X_PRHEI_UNCOMPRESSED_1571 10
+    .define X_PRHEI_UNCOMPRESSED_1571 8
     .define Y_PRHEI_UNCOMPRESSED_1571 0
 
 
-    .define X_SHEBA_UNCOMPRESSED_1581 $27
+    .define X_SHEBA_UNCOMPRESSED_1581 $29
     .define Y_SHEBA_UNCOMPRESSED_1581 $00
 
     .define X_PRHEI_UNCOMPRESSED_1581 $29
-    .define Y_PRHEI_UNCOMPRESSED_1581 $23
+    .define Y_PRHEI_UNCOMPRESSED_1581 $20
 
 
-        .if DECOMPRESSOR = DECOMPRESSORS::PUCRUNCH
+        .if DECOMPRESSOR = DECOMPRESSORS::EXOMIZER
 
-        .define X_SHEBA_COMPRESSED_1541 9
+        .define X_SHEBA_COMPRESSED_1541 13
         .define Y_SHEBA_COMPRESSED_1541 0
 
-        .define X_PRHEI_COMPRESSED_1541 15
-        .define Y_PRHEI_COMPRESSED_1541 0
+        .define X_PRHEI_COMPRESSED_1541 8
+        .define Y_PRHEI_COMPRESSED_1541 3
 
-        .define X_BOTH_COMPRESSED_1541  20
+        .define X_BOTH_COMPRESSED_1541  14
         .define Y_BOTH_COMPRESSED_1541  0
 
 
-        .define X_SHEBA_COMPRESSED_1571 8
+        .define X_SHEBA_COMPRESSED_1571 45
         .define Y_SHEBA_COMPRESSED_1571 0
 
         .define X_PRHEI_COMPRESSED_1571 11
         .define Y_PRHEI_COMPRESSED_1571 0
 
-        .define X_BOTH_COMPRESSED_1571  13
+        .define X_BOTH_COMPRESSED_1571  46
         .define Y_BOTH_COMPRESSED_1571  0
 
 
-        .define X_SHEBA_COMPRESSED_1581 $27
-        .define Y_SHEBA_COMPRESSED_1581 $20
-
-        .define X_PRHEI_COMPRESSED_1581 $26
-        .define Y_PRHEI_COMPRESSED_1581 $03
-
-        .define X_BOTH_COMPRESSED_1581  $26
-        .define Y_BOTH_COMPRESSED_1581  $1a
-
-        .elseif DECOMPRESSOR = DECOMPRESSORS::BYTEBOOZER
-
-        .define X_SHEBA_COMPRESSED_1541 10
-        .define Y_SHEBA_COMPRESSED_1541 0
-
-        .define X_PRHEI_COMPRESSED_1541 16
-        .define Y_PRHEI_COMPRESSED_1541 0
-
-        .define X_BOTH_COMPRESSED_1541  21
-        .define Y_BOTH_COMPRESSED_1541  0
-
-
-        .define X_SHEBA_COMPRESSED_1571 43
-        .define Y_SHEBA_COMPRESSED_1571 0
-
-        .define X_PRHEI_COMPRESSED_1571 46
-        .define Y_PRHEI_COMPRESSED_1571 0
-
-        .define X_BOTH_COMPRESSED_1571  48
-        .define Y_BOTH_COMPRESSED_1571  0
-
-
-        .define X_SHEBA_COMPRESSED_1581 $29
+        .define X_SHEBA_COMPRESSED_1581 $25
         .define Y_SHEBA_COMPRESSED_1581 $00
 
-        .define X_PRHEI_COMPRESSED_1581 $26
-        .define Y_PRHEI_COMPRESSED_1581 $09
-
-        .define X_BOTH_COMPRESSED_1581  $2a
-        .define Y_BOTH_COMPRESSED_1581  $1b
-
-        .elseif DECOMPRESSOR = DECOMPRESSORS::LEVELCRUSH
-
-        .define X_SHEBA_COMPRESSED_1541 11
-        .define Y_SHEBA_COMPRESSED_1541 0
-
-        .define X_PRHEI_COMPRESSED_1541 17
-        .define Y_PRHEI_COMPRESSED_1541 0
-
-        .define X_BOTH_COMPRESSED_1541  22
-        .define Y_BOTH_COMPRESSED_1541  0
-
-
-        .define X_SHEBA_COMPRESSED_1571 9
-        .define Y_SHEBA_COMPRESSED_1571 0
-
-        .define X_PRHEI_COMPRESSED_1571 12
-        .define Y_PRHEI_COMPRESSED_1571 0
-
-        .define X_BOTH_COMPRESSED_1571  14
-        .define Y_BOTH_COMPRESSED_1571  0
-
-
-        .define X_SHEBA_COMPRESSED_1581 $29
-        .define Y_SHEBA_COMPRESSED_1581 $0c
-
-        .define X_PRHEI_COMPRESSED_1581 $26
-        .define Y_PRHEI_COMPRESSED_1581 $0f
+        .define X_PRHEI_COMPRESSED_1581 $25
+        .define Y_PRHEI_COMPRESSED_1581 $0b
 
         .define X_BOTH_COMPRESSED_1581  $25
-        .define Y_BOTH_COMPRESSED_1581  $03
+        .define Y_BOTH_COMPRESSED_1581  $10
 
-        .elseif DECOMPRESSOR = DECOMPRESSORS::EXOMIZER
+        .elseif DECOMPRESSOR = DECOMPRESSORS::PUCRUNCH
 
-        .define X_SHEBA_COMPRESSED_1541 12
+        .define X_SHEBA_COMPRESSED_1541 17
         .define Y_SHEBA_COMPRESSED_1541 0
 
-        .define X_PRHEI_COMPRESSED_1541 19
-        .define Y_PRHEI_COMPRESSED_1541 0
+        .define X_PRHEI_COMPRESSED_1541 11
+        .define Y_PRHEI_COMPRESSED_1541 1
 
-        .define X_BOTH_COMPRESSED_1541  23
+        .define X_BOTH_COMPRESSED_1541  19
         .define Y_BOTH_COMPRESSED_1541  0
 
 
-        .define X_SHEBA_COMPRESSED_1571 44
+        .define X_SHEBA_COMPRESSED_1571 48
         .define Y_SHEBA_COMPRESSED_1571 0
 
-        .define X_PRHEI_COMPRESSED_1571 47
+        .define X_PRHEI_COMPRESSED_1571 14
         .define Y_PRHEI_COMPRESSED_1571 0
 
         .define X_BOTH_COMPRESSED_1571  49
         .define Y_BOTH_COMPRESSED_1571  0
 
 
-        .define X_SHEBA_COMPRESSED_1581 $29
+        .define X_SHEBA_COMPRESSED_1581 $2b
+        .define Y_SHEBA_COMPRESSED_1581 $16
+
+        .define X_PRHEI_COMPRESSED_1581 $2b
+        .define Y_PRHEI_COMPRESSED_1581 $21
+
+        .define X_BOTH_COMPRESSED_1581  $2b
+        .define Y_BOTH_COMPRESSED_1581  $27
+
+        .elseif DECOMPRESSOR = DECOMPRESSORS::DOYNAX_LZ
+
+        .define X_SHEBA_COMPRESSED_1541 28
+        .define Y_SHEBA_COMPRESSED_1541 0
+
+        .define X_PRHEI_COMPRESSED_1541 22
+        .define Y_PRHEI_COMPRESSED_1541 3
+
+        .define X_BOTH_COMPRESSED_1541  29
+        .define Y_BOTH_COMPRESSED_1541  0
+
+
+        .define X_SHEBA_COMPRESSED_1571 22
+        .define Y_SHEBA_COMPRESSED_1571 0
+
+        .define X_PRHEI_COMPRESSED_1571 57
+        .define Y_PRHEI_COMPRESSED_1571 0
+
+        .define X_BOTH_COMPRESSED_1571  23
+        .define Y_BOTH_COMPRESSED_1571  0
+
+
+        .define X_SHEBA_COMPRESSED_1581 $22
+        .define Y_SHEBA_COMPRESSED_1581 $1d
+
+        .define X_PRHEI_COMPRESSED_1581 $2e
+        .define Y_PRHEI_COMPRESSED_1581 $05
+
+        .define X_BOTH_COMPRESSED_1581  $2e
+        .define Y_BOTH_COMPRESSED_1581  $0b
+
+        .elseif DECOMPRESSOR = DECOMPRESSORS::BYTEBOOZER
+
+        .define X_SHEBA_COMPRESSED_1541 22
+        .define Y_SHEBA_COMPRESSED_1541 0
+
+        .define X_PRHEI_COMPRESSED_1541 15
+        .define Y_PRHEI_COMPRESSED_1541 1
+
+        .define X_BOTH_COMPRESSED_1541  23
+        .define Y_BOTH_COMPRESSED_1541  0
+
+
+        .define X_SHEBA_COMPRESSED_1571 51
+        .define Y_SHEBA_COMPRESSED_1571 0
+
+        .define X_PRHEI_COMPRESSED_1571 17
+        .define Y_PRHEI_COMPRESSED_1571 0
+
+        .define X_BOTH_COMPRESSED_1571  52
+        .define Y_BOTH_COMPRESSED_1571  0
+
+
+        .define X_SHEBA_COMPRESSED_1581 $24
+        .define Y_SHEBA_COMPRESSED_1581 $26
+
+        .define X_PRHEI_COMPRESSED_1581 $2c
+        .define Y_PRHEI_COMPRESSED_1581 $0f
+
+        .define X_BOTH_COMPRESSED_1581  $2c
+        .define Y_BOTH_COMPRESSED_1581  $15
+
+        .elseif DECOMPRESSOR = DECOMPRESSORS::LEVELCRUSH
+
+        .define X_SHEBA_COMPRESSED_1541 26
+        .define Y_SHEBA_COMPRESSED_1541 0
+
+        .define X_PRHEI_COMPRESSED_1541 20
+        .define Y_PRHEI_COMPRESSED_1541 3
+
+        .define X_BOTH_COMPRESSED_1541  27
+        .define Y_BOTH_COMPRESSED_1541  0
+
+
+        .define X_SHEBA_COMPRESSED_1571 55
+        .define Y_SHEBA_COMPRESSED_1571 0
+
+        .define X_PRHEI_COMPRESSED_1571 21
+        .define Y_PRHEI_COMPRESSED_1571 0
+
+        .define X_BOTH_COMPRESSED_1571  56
+        .define Y_BOTH_COMPRESSED_1571  0
+
+
+        .define X_SHEBA_COMPRESSED_1581 $23
+        .define Y_SHEBA_COMPRESSED_1581 $22
+
+        .define X_PRHEI_COMPRESSED_1581 $2d
+        .define Y_PRHEI_COMPRESSED_1581 $0a
+
+        .define X_BOTH_COMPRESSED_1581  $2d
+        .define Y_BOTH_COMPRESSED_1581  $10
+
+        .endif
+    .else; !LOAD_TO_UPPER_MEM
+
+    .define X_SHEBA_UNCOMPRESSED_1541 32
+    .define Y_SHEBA_UNCOMPRESSED_1541 0
+
+    .define X_PRHEI_UNCOMPRESSED_1541 34
+    .define Y_PRHEI_UNCOMPRESSED_1541 0
+
+
+    .define X_SHEBA_UNCOMPRESSED_1571 32
+    .define Y_SHEBA_UNCOMPRESSED_1571 0
+
+    .define X_PRHEI_UNCOMPRESSED_1571 33
+    .define Y_PRHEI_UNCOMPRESSED_1571 0
+
+
+    .define X_SHEBA_UNCOMPRESSED_1581 $27
+    .define Y_SHEBA_UNCOMPRESSED_1581 $00
+
+    .define X_PRHEI_UNCOMPRESSED_1581 $27
+    .define Y_PRHEI_UNCOMPRESSED_1581 $20
+
+
+        .if DECOMPRESSOR = DECOMPRESSORS::EXOMIZER
+
+        .define X_SHEBA_COMPRESSED_1541 11
+        .define Y_SHEBA_COMPRESSED_1541 0
+
+        .define X_PRHEI_COMPRESSED_1541 8
+        .define Y_PRHEI_COMPRESSED_1541 2
+
+        .define X_BOTH_COMPRESSED_1541  12
+        .define Y_BOTH_COMPRESSED_1541  0
+
+
+        .define X_SHEBA_COMPRESSED_1571 9
+        .define Y_SHEBA_COMPRESSED_1571 0
+
+        .define X_PRHEI_COMPRESSED_1571 44
+        .define Y_PRHEI_COMPRESSED_1571 0
+
+        .define X_BOTH_COMPRESSED_1571  10
+        .define Y_BOTH_COMPRESSED_1571  0
+
+
+        .define X_SHEBA_COMPRESSED_1581 $26
         .define Y_SHEBA_COMPRESSED_1581 $18
 
         .define X_PRHEI_COMPRESSED_1581 $26
-        .define Y_PRHEI_COMPRESSED_1581 $15
+        .define Y_PRHEI_COMPRESSED_1581 $23
 
-        .define X_BOTH_COMPRESSED_1581  $25
+        .define X_BOTH_COMPRESSED_1581  $2a
+        .define Y_BOTH_COMPRESSED_1581  $18
+
+        .elseif DECOMPRESSOR = DECOMPRESSORS::PUCRUNCH
+
+        .define X_SHEBA_COMPRESSED_1541 15
+        .define Y_SHEBA_COMPRESSED_1541 0
+
+        .define X_PRHEI_COMPRESSED_1541 10
+        .define Y_PRHEI_COMPRESSED_1541 2
+
+        .define X_BOTH_COMPRESSED_1541  16
+        .define Y_BOTH_COMPRESSED_1541  0
+
+
+        .define X_SHEBA_COMPRESSED_1571 12
+        .define Y_SHEBA_COMPRESSED_1571 0
+
+        .define X_PRHEI_COMPRESSED_1571 47
+        .define Y_PRHEI_COMPRESSED_1571 0
+
+        .define X_BOTH_COMPRESSED_1571  13
+        .define Y_BOTH_COMPRESSED_1571  0
+
+
+        .define X_SHEBA_COMPRESSED_1581 $25
+        .define Y_SHEBA_COMPRESSED_1581 $20
+
+        .define X_PRHEI_COMPRESSED_1581 $2b
+        .define Y_PRHEI_COMPRESSED_1581 $00
+
+        .define X_BOTH_COMPRESSED_1581  $2b
+        .define Y_BOTH_COMPRESSED_1581  $06
+
+        .elseif DECOMPRESSOR = DECOMPRESSORS::DOYNAX_LZ
+
+        .define X_SHEBA_COMPRESSED_1541 31
+        .define Y_SHEBA_COMPRESSED_1541 0
+
+        .define X_PRHEI_COMPRESSED_1541 31
+        .define Y_PRHEI_COMPRESSED_1541 1
+
+        .define X_BOTH_COMPRESSED_1541  30
+        .define Y_BOTH_COMPRESSED_1541  0
+
+
+        .define X_SHEBA_COMPRESSED_1571 31
+        .define Y_SHEBA_COMPRESSED_1571 0
+
+        .define X_PRHEI_COMPRESSED_1571 66
+        .define Y_PRHEI_COMPRESSED_1571 0
+
+        .define X_BOTH_COMPRESSED_1571  58
+        .define Y_BOTH_COMPRESSED_1571  0
+
+
+        .define X_SHEBA_COMPRESSED_1581 $2d
+        .define Y_SHEBA_COMPRESSED_1581 $22
+
+        .define X_PRHEI_COMPRESSED_1581 $22
+        .define Y_PRHEI_COMPRESSED_1581 $06
+
+        .define X_BOTH_COMPRESSED_1581  $22
+        .define Y_BOTH_COMPRESSED_1581  $0c
+
+        .elseif DECOMPRESSOR = DECOMPRESSORS::BYTEBOOZER
+
+        .define X_SHEBA_COMPRESSED_1541 20
+        .define Y_SHEBA_COMPRESSED_1541 0
+
+        .define X_PRHEI_COMPRESSED_1541 13
+        .define Y_PRHEI_COMPRESSED_1541 1
+
+        .define X_BOTH_COMPRESSED_1541  21
+        .define Y_BOTH_COMPRESSED_1541  0
+
+
+        .define X_SHEBA_COMPRESSED_1571 15
+        .define Y_SHEBA_COMPRESSED_1571 0
+
+        .define X_PRHEI_COMPRESSED_1571 50
+        .define Y_PRHEI_COMPRESSED_1571 0
+
+        .define X_BOTH_COMPRESSED_1571  16
+        .define Y_BOTH_COMPRESSED_1571  0
+
+
+        .define X_SHEBA_COMPRESSED_1581 $24
+        .define Y_SHEBA_COMPRESSED_1581 $03
+
+        .define X_PRHEI_COMPRESSED_1581 $24
+        .define Y_PRHEI_COMPRESSED_1581 $0f
+
+        .define X_BOTH_COMPRESSED_1581  $24
         .define Y_BOTH_COMPRESSED_1581  $15
+
+        .elseif DECOMPRESSOR = DECOMPRESSORS::LEVELCRUSH
+
+        .define X_SHEBA_COMPRESSED_1541 24
+        .define Y_SHEBA_COMPRESSED_1541 0
+
+        .define X_PRHEI_COMPRESSED_1541 17
+        .define Y_PRHEI_COMPRESSED_1541 1
+
+        .define X_BOTH_COMPRESSED_1541  25
+        .define Y_BOTH_COMPRESSED_1541  0
+
+
+        .define X_SHEBA_COMPRESSED_1571 19
+        .define Y_SHEBA_COMPRESSED_1571 0
+
+        .define X_PRHEI_COMPRESSED_1571 54
+        .define Y_PRHEI_COMPRESSED_1571 0
+
+        .define X_BOTH_COMPRESSED_1571  20
+        .define Y_BOTH_COMPRESSED_1571  0
+
+
+        .define X_SHEBA_COMPRESSED_1581 $2c
+        .define Y_SHEBA_COMPRESSED_1581 $26
+
+        .define X_PRHEI_COMPRESSED_1581 $23
+        .define Y_PRHEI_COMPRESSED_1581 $0a
+
+        .define X_BOTH_COMPRESSED_1581  $23
+        .define Y_BOTH_COMPRESSED_1581  $10
 
         .endif
 
@@ -851,7 +915,7 @@ nameend:
             ; YAPE doesn't set FA to the current
             ; drive when using autostart
             lda FA
-            and #~$01
+            and #.lobyte(~$01)
             cmp #$08
             beq :+
             lda #$08
@@ -893,7 +957,7 @@ nameend:
 
             jsr waitvbl
             lda TED_CHARGEN_ADDR
-            and #~CHARGEN_ADDR_MASK
+            and #.lobyte(~CHARGEN_ADDR_MASK)
             ora #MAKE_CHARGEN_ADDR(CHARSET_ADDR_UPPERLOWER)
             sta TED_CHARGEN_ADDR
             lda #COLOUR_BLACK
@@ -937,7 +1001,7 @@ calibrate:  jsr readctr
             stx TED_IRQ_RASTERLINE
             lsr
             lda TED_IMR
-            and #~IRQ_RASTERLINE_MSB
+            and #.lobyte(~IRQ_RASTERLINE_MSB)
             bcc :+
             ora #IRQ_RASTERLINE_MSB
 :           sta TED_IMR
@@ -1002,7 +1066,7 @@ calibrate:  jsr readctr
 .endif; PLATFORM <> diskio::platform::COMMODORE_16
 
 .if DYNLINK_IMPORT
-
+			; import loader
             PREPARE_IMPORT diskioreq
 
             jsr printrgns
@@ -1228,18 +1292,18 @@ calibrate:  jsr readctr
             lda #BITMAP_MODE | DISPLAY_ENABLE | LINES_25 | SCROLLY_3
             sta TED_CTRL1
             lda TED_BITMAP_ADDR
-            and #~(BITMAP_ADDR_MASK | CHARSET_BITMAP_IN_ROM)
+            and #.lobyte(~(BITMAP_ADDR_MASK | CHARSET_BITMAP_IN_ROM))
             ora #MAKE_BITMAP_ADDR(BITMAP)
             sta TED_BITMAP_ADDR
             lda TED_SCREEN_ADDR
-            and #~SCREEN_ADDR_MASK
+            and #.lobyte(~SCREEN_ADDR_MASK)
             ora #MAKE_SCREEN_ADDR(COLRAM)
             sta TED_SCREEN_ADDR
 
             sei
             lda #$51 - IRQ_SLACK
             sta TED_IRQ_RASTERLINE
-            lda #~IRQ_RASTERLINE_MSB
+            lda #.lobyte(~IRQ_RASTERLINE_MSB)
             and TED_IMR
             sta TED_IMR
             lda #.lobyte(irq1)
@@ -1461,7 +1525,7 @@ SPRITESXPOS = $18
 
     .if PLATFORM = diskio::platform::COMMODORE_16
             sta TED_RAM_ENABLE
-            lda #~FORCE_SINGLE_CLOCK
+            lda #.lobyte(~FORCE_SINGLE_CLOCK)
             sei
             and TED_CHARGEN_ADDR
             sta TED_CHARGEN_ADDR
@@ -1713,6 +1777,7 @@ getchunkwp: sta a:$00,x; buffer to the bitmap
             sbc #.hibyte(BITMAP + BITMAP_SIZE)
             bcc getchunklp
 
+			; write pointer check, display internal error on fail
             lda getchunkwp + $01
             cmp #.lobyte(BITMAP + BITMAP_SIZE)
             bne internerr
@@ -1730,6 +1795,7 @@ getchunkwp: sta a:$00,x; buffer to the bitmap
 
 getchnkend: cmp #diskio::status::EOF
             bne :+
+			; write pointer check, display internal error on fail
             ldx getchunkwp + $01
             cpx #.lobyte(BITMAP + BITMAP_SIZE)
             bne internerr
@@ -2282,7 +2348,7 @@ initstat:
             sta CIA1_TA_HI
             sta CIA1_TB_HI
             lda CIA1_CRA
-            and #~(COUNT_CNT | ONE_SHOT)
+            and #.lobyte(~(COUNT_CNT | ONE_SHOT))
             ora #FORCE_LOAD | CONTINUOUS | TIMER_START
             sta CIA1_CRA
             lda #FORCE_LOAD | CONTINUOUS | COUNT_TA_UNDF | TIMER_START
@@ -2301,7 +2367,7 @@ printstat:
 
             PUSH_MEMCONFIG_AND_ENABLE_ALL_ROM
 .else
-            lda #~TIMER_STOP
+            lda #.lobyte(~TIMER_STOP)
             and CIA1_CRA
             sta CIA1_CRA
             lda #TIMER_STOP
@@ -2409,7 +2475,7 @@ ntsckbs:    LONGTOFAC numccntsc; fac#1 = cyclespersecond
 .if PLATFORM = diskio::platform::COMMODORE_16
             PUSH_MEMCONFIG_AND_ENABLE_ALL_RAM
 .endif
-            ldy #-$01
+            ldy #.lobyte(-$01)
 :           iny
             cpy statlen
             bcs truncdone
@@ -2529,7 +2595,7 @@ error:      sei
             cli
             sbc #$00
             sta erroraddrh + 1
-            lda #~MULTICOLOUR_MODE
+            lda #.lobyte(~MULTICOLOUR_MODE)
 .if PLATFORM = diskio::platform::COMMODORE_16
             and TED_CTRL2
             sta TED_CTRL2
@@ -2695,7 +2761,7 @@ clearline:  sta BITMAP + $00,y
             bne :+
 .if PLATFORM = diskio::platform::COMMODORE_16
             lda TED_SCREEN_ADDR
-            and #~SCREEN_ADDR_MASK
+            and #.lobyte(~SCREEN_ADDR_MASK)
             ora #MAKE_SCREEN_ADDR($0800)
             sta TED_SCREEN_ADDR
             lda #.hibyte($0c00)
@@ -2792,14 +2858,14 @@ gethex:     tay
             lsr
             cmp #10
             bcc :+
-            adc #'a' - '0' - 10 - 1 - 64
+            adc #.lobyte('a' - '0' - 10 - 1 - 64)
 :           adc #'0'
             tax
             tya
             and #%00001111
             cmp #10
             bcc :+
-            adc #'a' - '0' - 10 - 1 - 64
+            adc #.lobyte('a' - '0' - 10 - 1 - 64)
 :           adc #'0'
             rts
 
@@ -3199,7 +3265,7 @@ irq0:       LOADER_IRQ_HANDLER_PROLOGUE irqendy
             lda #BITMAP_MODE | DISPLAY_ENABLE | LINES_25 | SCROLLY_3
             sta TED_CTRL1; disable invalid mode
 
-            lda #~IRQ_RASTERLINE_MSB
+            lda #.lobyte(~IRQ_RASTERLINE_MSB)
             and TED_IMR
             sta TED_IMR
             lda #$51 - IRQ_SLACK
@@ -3239,7 +3305,7 @@ irq2:       LOADER_IRQ_HANDLER_PROLOGUE irqendy
 
             lda TED_CHARGEN_ADDR
             pha
-            and #~FORCE_SINGLE_CLOCK
+            and #.lobyte(~FORCE_SINGLE_CLOCK)
             sta TED_CHARGEN_ADDR
 
             lda #$10
@@ -3259,7 +3325,7 @@ irq2:       LOADER_IRQ_HANDLER_PROLOGUE irqendy
             lda #BITMAP_MODE | DISPLAY_ENABLE | LINES_25 | SCROLLY_4
             sta TED_CTRL1; switch to text mode
             lda TED_SCREEN_ADDR
-            and #~SCREEN_ADDR_MASK
+            and #.lobyte(~SCREEN_ADDR_MASK)
             ora #MAKE_SCREEN_ADDR(COLRAM + $0800)
             sta TED_SCREEN_ADDR
             sec
@@ -3276,7 +3342,7 @@ lineoffset = * + 1
             lda #INVALID_MODE | DISPLAY_ENABLE | LINES_25 | SCROLLY_4
             sta TED_CTRL1; hide garbage
             lda TED_CHARGEN_ADDR
-            and #~CHARGEN_ADDR_MASK
+            and #.lobyte(~CHARGEN_ADDR_MASK)
             ora #MAKE_CHARGEN_ADDR(CHARSET_ADDR_UPPERLOWER)
             sta TED_CHARGEN_ADDR
 
@@ -3284,7 +3350,7 @@ lineoffset = * + 1
             sta TED_CTRL1; switch to text mode
             ldx #$07
             stx TED_VERTSUBCOUNT
-            lda #~MULTICOLOUR_MODE
+            lda #.lobyte(~MULTICOLOUR_MODE)
             and TED_CTRL2
             sta TED_CTRL2
 
@@ -3299,7 +3365,7 @@ lineoffset = * + 1
             lda #RASTER_IRQ
             sta TED_IRR
             pla
-            and #~CHARGEN_ADDR_MASK
+            and #.lobyte(~CHARGEN_ADDR_MASK)
             ora #MAKE_CHARGEN_ADDR(CHARSET_ADDR_UPPERLOWER)
             sta TED_CHARGEN_ADDR
             jmp irqendy
@@ -3310,9 +3376,9 @@ irq3:       LOADER_IRQ_HANDLER_PROLOGUE irqendy
 
             lda TED_CHARGEN_ADDR
             pha
-            and #~FORCE_SINGLE_CLOCK
+            and #.lobyte(~FORCE_SINGLE_CLOCK)
             sta TED_CHARGEN_ADDR
-            and #~CHARGEN_ADDR_MASK
+            and #.lobyte(~CHARGEN_ADDR_MASK)
             ora #MAKE_CHARGEN_ADDR(COLRAM + $0c00)
             tax
             sec
@@ -3336,11 +3402,11 @@ irq3:       LOADER_IRQ_HANDLER_PROLOGUE irqendy
 :           dey
             bne :-
             nop
-            lda #~CHARSET_BITMAP_IN_ROM
+            lda #.lobyte(~CHARSET_BITMAP_IN_ROM)
             and TED_BITMAP_ADDR
             jmp :+++
 
-:           lda #~CHARSET_BITMAP_IN_ROM
+:           lda #.lobyte(~CHARSET_BITMAP_IN_ROM)
             and TED_BITMAP_ADDR
 :           cpy TED_RASTERLINE
             bcs :-
@@ -3352,7 +3418,7 @@ irq3:       LOADER_IRQ_HANDLER_PROLOGUE irqendy
             beq ntscborder
 
             pla
-            and #~CHARGEN_ADDR_MASK
+            and #.lobyte(~CHARGEN_ADDR_MASK)
             ora #MAKE_CHARGEN_ADDR(COLRAM + $0c00)
             sta TED_CHARGEN_ADDR
 
@@ -3384,10 +3450,10 @@ irq4:       LOADER_IRQ_HANDLER_PROLOGUE irqendy
             STABILIZE_RASTER
 
 ntscborder: lda TED_SCREEN_ADDR
-            and #~SCREEN_ADDR_MASK
+            and #.lobyte(~SCREEN_ADDR_MASK)
             ora #MAKE_SCREEN_ADDR(COLRAM)
             sta TED_SCREEN_ADDR
-            lda #~CHARSET_BITMAP_IN_ROM
+            lda #.lobyte(~CHARSET_BITMAP_IN_ROM)
             and TED_BITMAP_ADDR
             sta TED_BITMAP_ADDR
             lda PALNTSC
@@ -3403,24 +3469,24 @@ ntscborder: lda TED_SCREEN_ADDR
             jsr update_clk
 
     .if BYTESTREAM & (!DYNLINK_IMPORT)
-        .import loadedtb
+        .import loadedtab
 
-            lda loadedtb + $00
+            lda loadedtab + $00
             sta COLRAM + $0c89
-            lda loadedtb + $01
+            lda loadedtab + $01
             sta COLRAM + $0c91
-            lda loadedtb + $02
+            lda loadedtab + $02
             sta COLRAM + $0c99
-            lda loadedtb + $03
+            lda loadedtab + $03
             sta COLRAM + $0ca1
-            lda loadedtb + $04
+            lda loadedtab + $04
             sta COLRAM + $0ca9
-            lda loadedtb + $05
+            lda loadedtab + $05
             sta COLRAM + $0cb1
     .endif
 
             pla
-            and #~CHARGEN_ADDR_MASK
+            and #.lobyte(~CHARGEN_ADDR_MASK)
             ora #MAKE_CHARGEN_ADDR(COLRAM + $0c00)
             sta TED_CHARGEN_ADDR
 
@@ -3571,7 +3637,7 @@ readctrfix: lda TED_CHARGEN_ADDR
 :
             pla
             bne :+
-            lda #~FORCE_SINGLE_CLOCK
+            lda #.lobyte(~FORCE_SINGLE_CLOCK)
             php
             sei
             and TED_CHARGEN_ADDR
@@ -3745,24 +3811,24 @@ irq2:       lda IO_PORT
             sta VIC2_CTRL1
 
     .if BYTESTREAM & (!DYNLINK_IMPORT)
-        .import loadedtb
+        .import loadedtab
 
-            lda loadedtb + $00
+            lda loadedtab + $00
             sta SPRITES + (17 * $03) + $00
-            lda loadedtb + $01
+            lda loadedtab + $01
             sta SPRITES + (17 * $03) + $01
-            lda loadedtb + $02
+            lda loadedtab + $02
             sta SPRITES + (17 * $03) + $02
-            lda loadedtb + $03
+            lda loadedtab + $03
             sta SPRITES + (17 * $03) + $40
-            lda loadedtb + $04
+            lda loadedtab + $04
             sta SPRITES + (17 * $03) + $41
-            lda loadedtb + $05
+            lda loadedtab + $05
             sta SPRITES + (17 * $03) + $42
     .endif
 
     .if TWO_BITS_RESEND_OPTIMIZE = 0
-            ;inc VIC2_SPR_ENABLE
+            inc VIC2_SPR_ENABLE
     .endif
 
     .if LOAD_TO_UPPER_MEM
@@ -3882,7 +3948,7 @@ brkhandler: pla
 
 
 .if DYNLINK_IMPORT
-
+			; print dynlink memory regions
 printrgns:  CONSOLE installrgn
             ldx diskioreq + diskio::IMPORT::INSTALL_BASE + 0
             ldy diskioreq + diskio::IMPORT::INSTALL_BASE + 1
@@ -4013,28 +4079,32 @@ filename:
     .if LOAD_TO_UPPER_MEM
         .if NONBLOCKING_API
             .asciiz "tb-shebahi.bin"
-        .elseif LOAD_COMPD_API & (DECOMPRESSOR = DECOMPRESSORS::PUCRUNCH)
-            .asciiz "tp-shebahi.pu"
-        .elseif LOAD_COMPD_API & (DECOMPRESSOR = DECOMPRESSORS::BYTEBOOZER)
-            .asciiz "tv-shebahi.bbconv"
-        .elseif LOAD_COMPD_API & (DECOMPRESSOR = DECOMPRESSORS::LEVELCRUSH)
-            .asciiz "tl-shebahi.lcconv"
         .elseif LOAD_COMPD_API & (DECOMPRESSOR = DECOMPRESSORS::EXOMIZER)
             .asciiz "te-shebahi.exo"
+        .elseif LOAD_COMPD_API & (DECOMPRESSOR = DECOMPRESSORS::PUCRUNCH)
+            .asciiz "tp-shebahi.pu"
+        .elseif LOAD_COMPD_API & (DECOMPRESSOR = DECOMPRESSORS::DOYNAX_LZ)
+            .asciiz "td-shebahi.dnx"
+        .elseif LOAD_COMPD_API & (DECOMPRESSOR = DECOMPRESSORS::BYTEBOOZER)
+            .asciiz "tv-shebahi.bb"
+        .elseif LOAD_COMPD_API & (DECOMPRESSOR = DECOMPRESSORS::LEVELCRUSH)
+            .asciiz "tl-shebahi.lc"
         .else
             .asciiz "tb-shebahi.bin"
         .endif
     .else
         .if NONBLOCKING_API
             .asciiz "sb-sheba.bin"
-        .elseif LOAD_COMPD_API & (DECOMPRESSOR = DECOMPRESSORS::PUCRUNCH)
-            .asciiz "sp-sheba.pu"
-        .elseif LOAD_COMPD_API & (DECOMPRESSOR = DECOMPRESSORS::BYTEBOOZER)
-            .asciiz "sv-sheba.bbconv"
-        .elseif LOAD_COMPD_API & (DECOMPRESSOR = DECOMPRESSORS::LEVELCRUSH)
-            .asciiz "sl-sheba.lcconv"
         .elseif LOAD_COMPD_API & (DECOMPRESSOR = DECOMPRESSORS::EXOMIZER)
             .asciiz "se-sheba.exo"
+        .elseif LOAD_COMPD_API & (DECOMPRESSOR = DECOMPRESSORS::PUCRUNCH)
+            .asciiz "sp-sheba.pu"
+        .elseif LOAD_COMPD_API & (DECOMPRESSOR = DECOMPRESSORS::DOYNAX_LZ)
+            .asciiz "sd-sheba.dnx"
+        .elseif LOAD_COMPD_API & (DECOMPRESSOR = DECOMPRESSORS::BYTEBOOZER)
+            .asciiz "sv-sheba.bb"
+        .elseif LOAD_COMPD_API & (DECOMPRESSOR = DECOMPRESSORS::LEVELCRUSH)
+            .asciiz "sl-sheba.lc"
         .else
             .asciiz "sb-sheba.bin"
         .endif
@@ -4050,43 +4120,51 @@ filename:
 shebaunc:   .asciiz "tb-shebahi.bin"
 prheiunc:   .asciiz "qb-prlogohi.bin"
 
-        .if DECOMPRESSOR = DECOMPRESSORS::PUCRUNCH
-shebacompd: .asciiz "tp-shebahi.pu"
-prheicompd: .asciiz "qp-prlogohi.pu"
-bothcompd:  .asciiz "cp-bothgfxhi.pu"
-        .elseif DECOMPRESSOR = DECOMPRESSORS::BYTEBOOZER
-shebacompd: .asciiz "tv-shebahi.bbconv"
-prheicompd: .asciiz "qv-prlogohi.bbconv"
-bothcompd:  .asciiz "cv-bothgfxhi.bbconv"
-        .elseif DECOMPRESSOR = DECOMPRESSORS::LEVELCRUSH
-shebacompd: .asciiz "tl-shebahi.lcconv"
-prheicompd: .asciiz "ql-prlogohi.lcconv"
-bothcompd:  .asciiz "cl-bothgfxhi.lcconv"
-        .elseif DECOMPRESSOR = DECOMPRESSORS::EXOMIZER
+        .if DECOMPRESSOR = DECOMPRESSORS::EXOMIZER
 shebacompd: .asciiz "te-shebahi.exo"
 prheicompd: .asciiz "qe-prlogohi.exo"
 bothcompd:  .asciiz "ce-bothgfxhi.exo"
+        .elseif DECOMPRESSOR = DECOMPRESSORS::PUCRUNCH
+shebacompd: .asciiz "tp-shebahi.pu"
+prheicompd: .asciiz "qp-prlogohi.pu"
+bothcompd:  .asciiz "cp-bothgfxhi.pu"
+        .elseif DECOMPRESSOR = DECOMPRESSORS::DOYNAX_LZ
+shebacompd: .asciiz "td-shebahi.dnx"
+prheicompd: .asciiz "qd-prlogohi.dnx"
+bothcompd:  .asciiz "cd-bothgfxhi.dnx"
+        .elseif DECOMPRESSOR = DECOMPRESSORS::BYTEBOOZER
+shebacompd: .asciiz "tv-shebahi.bb"
+prheicompd: .asciiz "qv-prlogohi.bb"
+bothcompd:  .asciiz "cv-bothgfxhi.bb"
+        .elseif DECOMPRESSOR = DECOMPRESSORS::LEVELCRUSH
+shebacompd: .asciiz "tl-shebahi.lc"
+prheicompd: .asciiz "ql-prlogohi.lc"
+bothcompd:  .asciiz "cl-bothgfxhi.lc"
         .endif
-    .else
+    .else; !LOAD_TO_UPPER_MEM
 shebaunc:   .asciiz "sb-sheba.bin"
 prheiunc:   .asciiz "pb-prlogo.bin"
 
-        .if DECOMPRESSOR = DECOMPRESSORS::PUCRUNCH
-shebacompd: .asciiz "sp-sheba.pu"
-prheicompd: .asciiz "pp-prlogo.pu"
-bothcompd:  .asciiz "bp-bothgfx.pu"
-        .elseif DECOMPRESSOR = DECOMPRESSORS::BYTEBOOZER
-shebacompd: .asciiz "sv-sheba.bbconv"
-prheicompd: .asciiz "pv-prlogo.bbconv"
-bothcompd:  .asciiz "bv-bothgfx.bbconv"
-        .elseif DECOMPRESSOR = DECOMPRESSORS::LEVELCRUSH
-shebacompd: .asciiz "sl-sheba.lcconv"
-prheicompd: .asciiz "pl-prlogo.lcconv"
-bothcompd:  .asciiz "bl-bothgfx.lcconv"
-        .elseif DECOMPRESSOR = DECOMPRESSORS::EXOMIZER
+        .if DECOMPRESSOR = DECOMPRESSORS::EXOMIZER
 shebacompd: .asciiz "se-sheba.exo"
 prheicompd: .asciiz "pe-prlogo.exo"
 bothcompd:  .asciiz "be-bothgfx.exo"
+        .elseif DECOMPRESSOR = DECOMPRESSORS::PUCRUNCH
+shebacompd: .asciiz "sp-sheba.pu"
+prheicompd: .asciiz "pp-prlogo.pu"
+bothcompd:  .asciiz "bp-bothgfx.pu"
+        .elseif DECOMPRESSOR = DECOMPRESSORS::DOYNAX_LZ
+shebacompd: .asciiz "sd-sheba.dnx"
+prheicompd: .asciiz "pd-prlogo.dnx"
+bothcompd:  .asciiz "bd-bothgfx.dnx"
+        .elseif DECOMPRESSOR = DECOMPRESSORS::BYTEBOOZER
+shebacompd: .asciiz "sv-sheba.bb"
+prheicompd: .asciiz "pv-prlogo.bb"
+bothcompd:  .asciiz "bv-bothgfx.bb"
+        .elseif DECOMPRESSOR = DECOMPRESSORS::LEVELCRUSH
+shebacompd: .asciiz "sl-sheba.lc"
+prheicompd: .asciiz "pl-prlogo.lc"
+bothcompd:  .asciiz "bl-bothgfx.lc"
         .endif
     .endif
 
@@ -4151,9 +4229,10 @@ errormsgsl: .byte .lobyte(invaliderr); $00
             .byte .lobyte(emsgerrfmt)
             .byte .lobyte(emsgerrmem)
 
+            .byte .lobyte(emsgdynlff)
             .byte .lobyte(warndynlfb)
 
-            .repeat $79, I
+            .repeat $78, I
                 .byte .lobyte(invaliderr)
             .endrep
 
@@ -4208,9 +4287,10 @@ errormsgsh: .byte .hibyte(invaliderr); $00
             .byte .hibyte(emsgerrfmt)
             .byte .hibyte(emsgerrmem)
 
+            .byte .hibyte(emsgdynlff)
             .byte .hibyte(warndynlfb)
 
-            .repeat $79, I
+            .repeat $78, I
                 .byte .hibyte(invaliderr)
             .endrep
 
@@ -4284,6 +4364,8 @@ emsgerros:  scrcode "Modload: Wrong OS."
 emsgerrfmt: scrcode "Modload: Data format error."
             .byte $00
 emsgerrmem: scrcode "Modload: Not enough memory."
+            .byte $00
+emsgdynlff: scrcode "Failed to import fallback library."
             .byte $00
 warndynlfb: scrcode "Imported fallback library."
             .byte $00

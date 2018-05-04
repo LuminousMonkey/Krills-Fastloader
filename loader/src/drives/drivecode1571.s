@@ -102,7 +102,7 @@ LOAD_FILE_VALUE       = $7f
 .endif
 
 
-            .org $001e
+            .org $001d
 
 .if UNINSTALL_RUNS_DINSTALL
     .export drvcodebeg71 : absolute
@@ -118,7 +118,7 @@ LOAD_FILE_VALUE       = $7f
 
 drvcodebeg71: .byte .hibyte(drivebusy71 - * + $0100 - $01); init transfer count hi-byte
 
-dcodinit:   lda #~MOTOR ; the motor is on with LOAD_ONCE because
+dcodinit:   lda #.lobyte(~MOTOR) ; the motor is on with LOAD_ONCE because
             and VIA2_PRB; of the KERNAL file open operation
             sta VIA2_PRB; immediately before running this code
 
@@ -182,7 +182,7 @@ c1570fix0:  bcs :+
             ; before spinning up the motor and finding the current track,
             ; wait until a file is requested to be loaded at all
             jsr one_mhz
-:           jsr lightsub
+:           jsr fadeled
             lda VIA1_PRB
             cmp #CLK_OUT | CLK_IN | DATA_IN | ATN_IN
             beq :-; wait until there is something to do
@@ -216,7 +216,7 @@ c1570fix0:  bcs :+
 
             ; find current track number
             ; this assumes the head is on a valid half track
-findtrackn: lda #-$01; invalid track number -> no track step
+findtrackn: lda #.lobyte(-$01); invalid track number -> no track step
             ldy #ANYSECTOR
             jsr getblkstid; no sector link sanity check, set CURTRACK
             bcs :+
@@ -266,7 +266,7 @@ SENDNIBBLETAB:
 
             .assert * <= $0100, error, "***** 1571 SENDNIBBLETAB too high in memory. *****"
 
-checkchgl:  jsr lightsub; fade off the busy led
+checkchgl:  jsr fadeled; fade off the busy led
 checkchg:   ; must not change y
             lax VIA2_PRB; check light sensor for disk removal
             eor DISKCHANGEBUFFER
@@ -276,6 +276,9 @@ checkchg:   ; must not change y
             sta DISKCHANGED; set the fetch dir flag when disks have been changed
             sec
 :           rts
+
+			; the routine above must not be called from the watchdog
+			; IRQ handler, as it may be overwritten on watchdog IRQ
 
             ; * >= $0100
 stack:
@@ -287,6 +290,27 @@ stack:
             .word $00, $00, $00, dcodinit - $01
 stackend:   ; stacktop + 1
             .assert stackend < $0200, error, "***** 1571 stack too high in memory. *****"
+
+busyledon:  lda #BUSY_LED
+            ora VIA2_PRB
+            bne store_via2
+
+fadeled:    tya
+            tax
+            beq :++++
+:           inx
+            bne :-
+            tax
+            jsr busyledon
+:           dex
+            bne :-
+            dey
+            bne :+
+motrledoff: and #.lobyte(~MOTOR)   ; turn off motor
+:           and #.lobyte(~BUSY_LED); turn off busy led
+store_via2: sta VIA2_PRB
+errorretlo: sec
+:           rts
 
             ; getblock calls
             ; in: a: track
@@ -380,6 +404,26 @@ getheader:  bit VIA1_PRA ; check
 
 waitdatahd: sta BLOCKINDEX; store sector index
 
+            jsr decodehdr
+            
+            ; checksum block header
+            tay
+            eor GCRBUFFER + $05; ID1
+            eor LOADEDSECTOR
+            eor GCRBUFFER + $06; checksum
+            sta CURTRACK; is changed to eor CURTRACK after init
+headerchk:  .byte OPC_BIT_ZP, .lobyte(errorretlo - * - $01); is changed to bne errorret
+                                                          ; after init, wait for next sector if
+                                                          ; sector header checksum was not ok
+            lda GCRBUFFER + $05; ID1
+            ldx #$00; set z-flag which won't be altered by the store opcodes
+storputid0: cpy ID0; cpy ID0/sty ID0
+            bne :+
+storputid1: cmp ID1; cmp ID1/sta ID1
+
+:           clc; the next opcode may be an rts, so denote operation successful here
+cmpidswtch: bne errorretlo; branch if the disk ID does not match
+
             ; wait for data block sync
             jsr waitsync; reset the time-out timer here
             cmp #%01010101; check if the sync is followed by a data block
@@ -406,8 +450,8 @@ loaddata:   lda DECGCRTABXX43210XHI,x; x = [$00..$ff], %2222....
             and #%11110000 ; 3333....
             adc #%00000000 ; 3333...3
             tax
-            lda GCRBUFFER0 ; %2222....            
-            ora DECGCRTAB3210ZZZ4LO,x; x = [($00..$ff) & $f1], %22223333
+            lda GCRBUFFER0 ; 2222....            
+            ora DECGCRTAB3210ZZZ4LO,x; x = [($00..$ff) & $f1], 22223333
             sta BLOCKBUFFER + $00,y
             eor CHECKSUM
             asl GCRBUFFER1 ; 3334444.
@@ -423,9 +467,9 @@ loaddata:   lda DECGCRTABXX43210XHI,x; x = [$00..$ff], %2222....
             and GCRBUFFER1 ; ...4444.
             ror            ; 4...4444
             tax            
-            lda DECGCRTAB0ZZZ4321HI,x; x = [($00..$ff) & $8f], %4444....
+            lda DECGCRTAB0ZZZ4321HI,x; x = [($00..$ff) & $8f], 4444....
             ldx GCRBUFFER0 ; 45555566
-            ora DECGCRTABX43210XXLO,x; x = [$00..$ff], %44445555
+            ora DECGCRTABX43210XXLO,x; x = [$00..$ff], 44445555
             sta BLOCKBUFFER + $01,y
                ; 48 cycles
 
@@ -441,9 +485,9 @@ loaddata:   lda DECGCRTABXX43210XHI,x; x = [$00..$ff], %2222....
             and #%11100000 ; 666.....
             ora GCRBUFFER0 ; 666...66
             tax
-            lda DECGCRTAB210ZZZ43HI,x; x = [($00..$ff) & $e3], %6666....
+            lda DECGCRTAB210ZZZ43HI,x; x = [($00..$ff) & $e3], 6666....
             ldx GCRBUFFER1 ; 66677777
-            ora DECGCRTABXXX43210LO,x; x = [$00..$ff], %66667777
+            ora DECGCRTABXXX43210LO,x; x = [$00..$ff], 66667777
                ; 46 cycles
 
 :           bit VIA1_PRA
@@ -452,7 +496,7 @@ loaddata:   lda DECGCRTABXX43210XHI,x; x = [$00..$ff], %2222....
             eor CHECKSUM
             sta CHECKSUM
             ldx VIA2_PRA   ; 00000111
-            lda DECGCRTAB43210XXXHI,x; x = [$00..$ff], %0000....
+            lda DECGCRTAB43210XXXHI,x; x = [$00..$ff], 0000....
             sta GCRBUFFER1
             txa
             and #%00000111 ; .....111
@@ -469,8 +513,8 @@ loaddata:   lda DECGCRTABXX43210XHI,x; x = [$00..$ff], %2222....
             and #%11000000 ; 11......
             ora GCRBUFFER2 ; 11...111
             tax
-            lda DECGCRTAB10ZZZ432LO,x; x = [($00..$ff) & $87]; %....1111
-            ora GCRBUFFER1 ; %00001111
+            lda DECGCRTAB10ZZZ432LO,x; x = [($00..$ff) & $87]; ....1111
+            ora GCRBUFFER1 ; 00001111
             sta BLOCKBUFFER + $00,y
             eor CHECKSUM
             sta CHECKSUM
@@ -482,7 +526,7 @@ scanswitch: jmp loaddata
 
 :           bne :++; don't checksum if only the first few bytes have been
                    ; decoded for scanning
-            lda DECGCRTABXX43210XHI,x; x = [$00..$ff], %2222....
+            lda DECGCRTABXX43210XHI,x; x = [$00..$ff], 2222....
             sta GCRBUFFER0
             txa            ; 11222223
             lsr            ; .1122222
@@ -492,15 +536,59 @@ scanswitch: jmp loaddata
             and #%11110000 ; 3333....
             adc #%00000000 ; 3333...3
             tax
-            lda GCRBUFFER0 ; %2222....
-            ora DECGCRTAB3210ZZZ4LO,x; x = [($00..$ff) & $f1], %22223333
+            lda GCRBUFFER0 ; 2222....
+            ora DECGCRTAB3210ZZZ4LO,x; x = [($00..$ff) & $f1], 22223333
             eor CHECKSUM
-            bne errorret; branch if data checksum is not ok
-:
-            ; checksum sector header
-            ; this is done only now because there is no time for that between
-            ; the sector header and data block
-            lda GCRBUFFER + $06
+            bne errorrethi; branch if data checksum is not ok
+
+:           ldx REQUESTEDSECTOR
+            inx
+            beq :+; branch on ANYSECTOR
+            ; gets here on ANYSECTORSANELINK, UNPROCESSEDSECTOR, or requested sector
+            ; sector link sanity check
+checklink:  ldy LINKTRACK
+            beq :+
+            cpy MAXTRACK; check whether track link is within the valid range
+            bcs errorrethi; if not, return error
+            jsr getnumscts
+            dex
+            cpx LINKSECTOR; check whether sector link is within the valid range
+            bcc errorrethi; branch if sector number too large
+
+            ; the link track is returned last so that the z-flag
+            ; is set if this block is the file's last one
+:           ldy LINKSECTOR  ; return the loaded block's sector link sector number
+            ldx LOADEDSECTOR; return the loaded block's sector number
+            lda LINKTRACK   ; return the loaded block's sector link track number
+            clc             ; operation successful
+            rts
+errorrethi: sec             ; operation not successful
+            rts
+
+waitsync:   ldx #$ff
+            stx VIA2_T1C_H
+
+.if !DISABLE_WATCHDOG
+            SKIPWORD
+
+            .assert * >= $02a9, error, "***** 1571 watchdog IRQ vector located below $02a9. *****"
+            .assert * <= $02a9, error, "***** 1571 watchdog IRQ vector located above $02a9. *****"
+
+            .word watchdgirq
+.endif; !DISABLE_WATCHDOG
+
+            inx
+:           lda VIA2_T1C_H
+            beq wsynctmout; will return $00 in the accu
+            bit VIA2_PRB
+            bmi :-
+            bit VIA2_PRA
+:           bit VIA1_PRA
+            bmi :-
+            lda VIA2_PRA; is never $00 but usually $52 (header) or $55 (data)
+wsynctmout: rts
+
+decodehdr:  lda GCRBUFFER + $06
             alr #(GCR_NIBBLE_MASK << 1) | 1; and + lsr
             tay
             lda GCRBUFFER + $05
@@ -524,88 +612,7 @@ scanswitch: jmp loaddata
             lsr
             lsr
             tay
-            lda GCRBUFFER + $00
-            jsr decodesub - $01; ID0
-            tay
-            eor GCRBUFFER + $05; ID1
-            eor LOADEDSECTOR
-            eor GCRBUFFER + $06; checksum
-            sta CURTRACK; is changed to eor CURTRACK after init
-headerchk:  .byte OPC_BIT_ZP, .lobyte(errorret - * - $01); is changed to bne errorret
-                                                         ; after init, wait for next sector if
-                                                         ; sector header checksum was not ok
-            lda GCRBUFFER + $05; ID1
-            ldx #$00; set z-flag which won't be altered by the store opcodes
-storputid0: cpy ID0; cpy ID0/sty ID0
-            bne :+
-storputid1: cmp ID1; cmp ID1/sta ID1
-
-:           clc; the next opcode may be an rts, so denote operation successful here
-dsctcmps:   bne errorret; branch if the disk ID does not match
-
-            ldx REQUESTEDSECTOR
-            inx
-            beq :+; branch on ANYSECTOR
-            ; gets here on ANYSECTORSANELINK, UNPROCESSEDSECTOR, or requested sector
-            ; sector link sanity check
-checklink:  ldy LINKTRACK
-            beq :+
-            cpy MAXTRACK; check whether track link is within the valid range
-            bcs errorret; if not, return error
-            jsr getnumscts
-            dex
-            cpx LINKSECTOR; check whether sector link is within the valid range
-            bcc errorret; branch if sector number too large
-
-            ; the link track is returned last so that the z-flag
-            ; is set if this block is the file's last one
-:           ldy LINKSECTOR  ; return the loaded block's sector link sector number
-            ldx LOADEDSECTOR; return the loaded block's sector number
-            lda LINKTRACK   ; return the loaded block's sector link track number
-            clc             ; operation successful
-            rts
-
-.if !DISABLE_WATCHDOG
-            .assert * >= $02a9, error, "***** 1571 watchdog IRQ vector located below $02a9. *****"
-            .assert * <= $02a9, error, "***** 1571 watchdog IRQ vector located above $02a9. *****"
-
-            .word watchdgirq
-.endif; !DISABLE_WATCHDOG
-
-lightsub:   tya
-            tax
-            beq :++++
-:           inx
-            bne :-
-            tax
-            jsr ddliteon
-:           dex
-            bne :-
-            dey
-            bne :+
-motrledoff: and #~MOTOR   ; turn off motor
-:           and #~BUSY_LED; turn off busy led
-store_via2: sta VIA2_PRB
-errorret:   sec
-:           rts
-
-ddliteon:   lda #BUSY_LED
-            ora VIA2_PRB
-            bne store_via2
-
-waitsync:   ldx #$ff
-            stx VIA2_T1C_H
-            inx
-:           lda VIA2_T1C_H
-            beq wsynctmout; will return $00 in the accu
-            bit VIA2_PRB
-            bmi :-
-            bit VIA2_PRA
-:           bit VIA1_PRA
-            bmi :-
-            lda VIA2_PRA; is never $00 but usually $52 (header) or $55 (data)
-wsynctmout: rts
-
+            lda GCRBUFFER + $00; ID0
             ror
 decodesub:  lsr
             lsr
@@ -617,7 +624,7 @@ decodesub:  lsr
 
 trackseek:  tax; destination track
 trackseekx: lda #MOTOR; turn on the motor
-            jsr ddliteon + $02
+            jsr busyledon + $02
             txa; destination track
             beq setbitrate; don't do anything if invalid track
             cmp MAXTRACK
@@ -641,7 +648,7 @@ trackseekx: lda #MOTOR; turn on the motor
             lda VIA1_PRA
             ora #SIDE_B  ; no idea why this is needed
 c1570fix1:  sta VIA1_PRA ; but it won't work without on 1571
-            and #~SIDE_SELECT
+            and #.lobyte(~SIDE_SELECT)
             bcc :+
             ora #SIDE_B
 :
@@ -655,7 +662,7 @@ c1570fix2:  sta VIA1_PRA
             ldy #$00
             sty CURSTPSL
             bcs :+
-            eor #~$00; invert track difference
+            eor #.lobyte(~$00); invert track difference
             adc #$01
             iny
 :           sty TRACKINC
@@ -701,10 +708,10 @@ noheadacc:  cpx VIA2_T1C_H
             bne trackstep
 
             ; bit-rates:
-            ; 31-35/66+   (17): 00 (innermost)
-            ; 25-30/60-65 (18): 01
-            ; 18-24/53-59 (19): 10
-            ;  1-17/36-52 (21): 11 (outermost)
+            ; 31-35/66+   (17): %00 (innermost)
+            ; 25-30/60-65 (18): %01
+            ; 18-24/53-59 (19): %10
+            ;  1-17/36-52 (21): %11 (outermost)
 setbitrate: ldy CURTRACK
             jsr getnumscts
 putbitrate: bit VIA2_PRB  ; is set to sta VIA2_PRB after init
@@ -718,7 +725,7 @@ two_mhz:    lda #TWO_MHZ | BYTE_READY; the accu must contain a negative number u
 
             ; for normal busy led fading speed and correct head
             ; stepping speed
-one_mhz:    lda #~TWO_MHZ
+one_mhz:    lda #.lobyte(~TWO_MHZ)
             and VIA1_PRA
 :           sta VIA1_PRA
             rts
@@ -757,14 +764,14 @@ watchdgirq: ldx #$ff
 
 duninstall: tya
             beq :+
-            jsr ddliteon
+            jsr busyledon
             lda #$ff; fade off the busy led
 :           pha
             lda #$12; ROM dir track
             jsr trackseek; ignore error (should not occur)
             pla
             tay
-:           jsr lightsub
+:           jsr fadeled
             tya
             bne :-
             jmp (RESET_VECTOR)
@@ -773,12 +780,12 @@ duninstall: tya
 
     .if !DISABLE_WATCHDOG
 
-watchdgirq: jsr ddliteon
+watchdgirq: jsr busyledon
             lda #$12; ROM dir track
             jsr trackseek; ignore error (should not occur)
             ; fade off the busy led and reset the drive
             ldy #$ff
-:           jsr lightsub
+:           jsr fadeled
             tya
             bne :-
             jmp (RESET_VECTOR)
@@ -786,7 +793,7 @@ watchdgirq: jsr ddliteon
     .endif; !DISABLE_WATCHDOG
 
 duninstall:
-:           jsr lightsub
+:           jsr fadeled
             tya
             bne :-
             lda MAXTRACK
@@ -811,7 +818,7 @@ idleloop:   jsr checkchgl; fade off busy led and check light sensor for disk rem
 
             tya
             beq beginload; check whether the busy led has been completely faded off
-            jsr ddliteon; if not, turn it on
+            jsr busyledon; if not, turn it on
 
 beginload:
 
@@ -854,7 +861,7 @@ getfilenam: jsr dgetbyte; get filename
     .endif
 .endif
 
-.if (::FILESYSTEM = FILESYSTEMS::TRACK_SECTOR) || LOAD_ONCE
+.if (::FILESYSTEM = FILESYSTEMS::TRACK_SECTOR) | LOAD_ONCE
 
             ; check for illegal track or sector
             ldy FILETRACK
@@ -868,30 +875,25 @@ getfilenam: jsr dgetbyte; get filename
 toillegal:  sec
             jmp illegalts
 :
-.endif; (::FILESYSTEM = FILESYSTEMS::TRACK_SECTOR) || LOAD_ONCE
+.endif; (::FILESYSTEM = FILESYSTEMS::TRACK_SECTOR) | LOAD_ONCE
 
-            lda #OPC_RTS; disable retry
-            sta dsctcmps; on ID mismatch
+            lda #OPC_BIT_ZP; disable error
+            sta cmpidswtch ; on ID mismatch
 spinuploop: ldy #ANYSECTOR; get any block on the current track, no sector link sanity check,
             jsr getblcurtr; don't store id, check after return
-            bcs spinuploop; retry until any block has been loaded correctly
+            bcs spinuploop; retry until any block header has been loaded correctly
 
-           ;clc
-            beq :+; branch if disk id is the same, if not, re-read the dir
-            sec; set the new disk flag when disks have been changed
-.if LOAD_ONCE
-:           ror DISKCHANGED
-.else
-:           lda #OPC_BNE; enable retry
-            ror DISKCHANGED
-            sta dsctcmps; on ID mismatch
+.if LOAD_ONCE = 0
+            lda #OPC_BNE  ; enable error
+            sta cmpidswtch; on ID mismatch
 .endif
-            beq samedisk; branches to samedisk if no disk changes have happened
-
-newdisk:    ; a new disk has been inserted
 
 .if (::FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME) && (!LOAD_ONCE)
 
+            lda DISKCHANGED
+            beq samedisk
+
+newdisk:    ; a new disk has been inserted
             lda #DIRTRACK
             ldy #DIRSECTOR
             jsr getblkstid; store id, sector link sanity check
@@ -1013,7 +1015,7 @@ findfile:   lda FILENAMEHASH0
             sta CYCLESTARTENDSECTOR
             sta NEXTDIRBLOCKSECTOR
 
-            jsr ddliteon
+            jsr busyledon
             ; check for illegal track or sector
             ldy .lobyte(DIRTRACKS),x
             beq toillegal + $00
@@ -1034,8 +1036,6 @@ toillegal:  sec
 
 .else; ::FILESYSTEM = FILESYSTEMS::TRACK_SECTOR && (!LOAD_ONCE)
 
-            ; a new disk has been inserted
-
     .if LOAD_ONCE
 :           lda CURTRACK
             ldy #ANYSECTOR; no sector link sanity check
@@ -1045,6 +1045,8 @@ toillegal:  sec
             sta DISKCHANGED
             bcc spinuploop
     .else
+            ; always consider disk as a new disk
+
             ; store new disk id
 :           lda CURTRACK
             ldy #ANYSECTOR; no sector link sanity check
@@ -1054,16 +1056,15 @@ toillegal:  sec
             sta DISKCHANGED
     .endif; !LOAD_ONCE
 
-samedisk:
     .if LOAD_ONCE
-            lda #OPC_BNE; enable retry
-            sta dsctcmps; on ID mismatch
+            lda #OPC_BNE  ; enable error
+            sta cmpidswtch; on ID mismatch
     .endif
-            jsr ddliteon; passes errorret, returns with carry set
+            jsr busyledon; passes errorretlo, returns with carry set
             lda FILETRACK
             ldy FILESECTOR
 
-.endif; !(::FILESYSTEM = FILESYSTEMS::TRACK_SECTOR) || LOAD_ONCE
+.endif; !(::FILESYSTEM = FILESYSTEMS::TRACK_SECTOR) | LOAD_ONCE
 
             ; a contains the file's starting track here
             ; y contains the file's starting sector here
@@ -1093,7 +1094,7 @@ scantrloop: lda #OPC_LDA_ABS; only fetch the first few bytes to track the links
             ; however, sector link sanity is checked
             ldy #ANYSECTORSANELINK; sector link sanity check
             sty REQUESTEDSECTOR
-            jsr getblkscan
+            jsr getblkscan; when loading by T&S: 1st rev: store id, 2nd rev: compare id
             bcs scantrloop; branch until fetch successful
 
            ;ldx LOADEDSECTOR
@@ -1135,14 +1136,24 @@ scantrloop: lda #OPC_LDA_ABS; only fetch the first few bytes to track the links
             sty SECTORCOUNT; amount of the file's blocks on the current track
 
 blockloop:  ldy #UNPROCESSEDSECTOR; find any yet unprocessed block belonging to the file
-            bcc :+; carry clear: load out-of-order
+            bcc loadooo; carry clear: load out-of-order
             ldy LINKSECTOR; load the next block in order
-:           sty SECTORTOFETCH
 
+.if ::FILESYSTEM = FILESYSTEMS::TRACK_SECTOR
+            ; for the first file block, store ID
+            sty SECTORTOFETCH
+:           lda CURTRACK
+            ldy SECTORTOFETCH; negative: any unprocessed sector, positive: this specific sector; sector link sanity check
+            jsr getblkstid   ; read any of the files's sectors on the current track, store id
+            bcs :-           ; retry until a block has been successfully loaded
+            bcc transfer
+.endif; ::FILESYSTEM = FILESYSTEMS::TRACK_SECTOR
+
+loadooo:    sty SECTORTOFETCH
 :           jsr getblcurts   ; read any of the files's sectors on the current track, compare id
             bcs :-           ; retry until a block has been successfully loaded
 
-            ; send the block over
+transfer:   ; send the block over
            ;ldx LOADEDSECTOR
             ldy #SECTORISPROCESSED; $ff
             sty TRACKLINKTAB,x; mark the loaded block as processed
@@ -1168,7 +1179,13 @@ blockloop:  ldy #UNPROCESSEDSECTOR; find any yet unprocessed block belonging to 
             tax
             pla; next track
             ; carry-flag is set if the next block may be loaded out of order
+.if ::FILESYSTEM = FILESYSTEMS::TRACK_SECTOR
+            beq :+
+            jmp trackloop; process next track
+:
+.else
             bne trackloop; process next track
+.endif; ::FILESYSTEM = FILESYSTEMS::TRACK_SECTOR
 
             ; loading is finished
 
@@ -1220,7 +1237,7 @@ sendstatus: lda #$00
 
 .if (::FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME) && (!LOAD_ONCE)
 
-fnamehash:  ldx #-$01 - LOAD_FILE_VALUE - 1
+fnamehash:  ldx #.lobyte(-$01 - LOAD_FILE_VALUE - 1)
 :           lda BLOCKBUFFER + $02,y
             iny
             cmp #' ' | $80; $a0 = end of filename
@@ -1294,7 +1311,7 @@ timeout:    ENABLE_WATCHDOG
 
 .if ::PROTOCOL = PROTOCOLS::TWO_BITS_RESEND
 
-			beq sendloop; jmp
+            beq sendloop; jmp
 resend:     stx VIA1_PRB            ; 4
             dey                     ; 2
 :           bit VIA1_PRB            ; 4 - sync: wait for ATN high
@@ -1306,14 +1323,14 @@ sendloop:   lda BLOCKBUFFER,y       ; 4
             lda SENDNIBBLETAB,x     ; 4
 :           bit VIA1_PRB            ; 4 - sync: wait for ATN low
             bmi :-                  ; 3
-			nop                     ; 2
-			nop                     ; 2
-			bit $24                 ; 3
+            nop                     ; 2
+            nop                     ; 2
+            bit $24                 ; 3
             sta VIA1_PRB            ; 4
                                     ; = 35
 
             asl                     ; 2
-            and #~ATNA_OUT          ; 2
+            and #.lobyte(~ATNA_OUT) ; 2
             tax                     ; 2
             lda BLOCKBUFFER,y       ; 4
             lsr                     ; 2
@@ -1333,7 +1350,7 @@ sendloop:   lda BLOCKBUFFER,y       ; 4
             nop                     ; 2
             nop                     ; 2
             asl                     ; 2
-            and #~ATNA_OUT          ; 2
+            and #.lobyte(~ATNA_OUT) ; 2
             sta VIA1_PRB            ; 4
                                     ; = 16
 

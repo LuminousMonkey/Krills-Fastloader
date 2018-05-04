@@ -8,13 +8,12 @@
 
     .export LOWMEMEND  : absolute
     .export RUNMODULE  : absolute
-    .export checkchg   : absolute
-    .export ddliteon   : absolute
+    .export busyledon  : absolute
     .export gcrdecode  : absolute
     .export dgetbyte   : absolute
     .export drivebusy  : absolute
     .export driveidle  : absolute
-    .export dsctcmps   : absolute
+    .export cmpidswtch : absolute
     .export gcrencode  : absolute
     .export getblkchid : absolute
     .export getblkstid : absolute
@@ -68,7 +67,7 @@
 
 
 .if !UNINSTALL_RUNS_DINSTALL
-            .org $001b
+            .org $0020
 .else
             .org $001a
 .endif
@@ -88,6 +87,12 @@ drvcodebeg41:
 dcodinit:
 
 .if !UNINSTALL_RUNS_DINSTALL
+            lda #T1_FREE_RUNNING | PA_LATCHING_ENABLE; watchdog IRQ: count phi2 pulses, 16-bit free-running,
+                                                     ; enable port a latching to grab one gcr byte at a time
+                                                     ; rather than letting the gcr bitstream scroll through
+                                                     ; port a (applies to 1541 and Oceanic OC-118, but not
+                                                     ; 1541-II)
+            sta VIA2_ACR
             lda #READ_MODE | BYTE_SYNC_ENABLE
             sta VIA2_PCR
 
@@ -107,7 +112,7 @@ dcodinit:
     .else
             ldx #JOBCODE0600 - JOBCODE0400 + $80
     .endif
-:           sta .lobyte(JOBCODE0400 - $80),x; clear job queue
+:           sta .lobyte(JOBCODE0400 - $80),x; clear job table
             dex
             bmi :-
 
@@ -117,6 +122,7 @@ dcodinit:
 
             lda #IRQ_SET_FLAGS | IRQ_TIMER_1
             sta VIA2_IER; timer 1 IRQs from VIA 2
+.endif; !UNINSTALL_RUNS_DINSTALL
 
             lda #JOBCODE_EXECUTE
             sta JOBCODE0300; execute watchdog handler at $0300 on watchdog time-out
@@ -126,9 +132,6 @@ dcodinit:
 
            ;ldx #$7f
             stx LOADEDMODULE
-.endif; !UNINSTALL_RUNS_DINSTALL
-
-           ;ldx #$7f
             stx DISKCHANGED
 
             lda #CLK_OUT; drivebusy, signal idle to the computer
@@ -146,7 +149,7 @@ dcodinit:
 :           tay
             ; before spinning up the motor and finding the current track,
             ; wait until a file is requested to be loaded at all
-:           jsr lightsub
+:           jsr fadeled
             lda VIA1_PRB
             cmp #CLK_OUT | CLK_IN | DATA_IN | ATN_IN
             beq :-; wait until there is something to do
@@ -156,8 +159,7 @@ dcodinit:
             beq :+
             jmp duninstall
 :
-            lda #WRITE_PROTECT
-            and VIA2_PRB
+            lda VIA2_PRB
             sta DISKCHANGEBUFFER; store light sensor state for disk removal detection
 
             ldy #$0f
@@ -185,7 +187,7 @@ mkgcrdec:   lda sendgcrraw,y
 
             ; find current track number
             ; this assumes the head is on a valid half track
-findtrackn: lda #-$01; invalid track number -> no track step
+findtrackn: lda #.lobyte(-$01); invalid track number -> no track step
             ldy #ANYSECTOR; $ff
             jsr getblkstid; no sector link sanity check, set CURTRACK
             bcs :+
@@ -229,11 +231,11 @@ LOWMEMEND = *
 KERNEL:
 
 .if UNINSTALL_RUNS_DINSTALL
-GETDRIVECODE = getdrvcode - gcrencode + $0800
+GETDRIVECODE = getdrvcode - drivebusy + $0800
 
-runcodeget: ldx #.lobyte(stackend - $07)
+runcodeget: ldx #.lobyte(stack + $01)
             txs
-:           lda .lobyte(gcrencode - $0100),x
+:           lda .lobyte(drivebusy - $0100),x
             sta $0700,x
             inx
             bne :-
@@ -245,7 +247,7 @@ getdrvcode: inx
 getroutputhi = * + $08
             inc getroutputhi - getdrvcode + GETDRIVECODE
             ; there is no watchdog while receiving the code
-:           jsr dgetbyte - gcrencode + $0800
+:           jsr dgetbyte - drivebusy + $0800
             sta a:.hibyte(drvcodebeg41 - $01) << 8,x
             cpx #.lobyte(drvprgend41 - $01)
             bne getdrvcode
@@ -259,13 +261,93 @@ getroutputhi = * + $08
 dgetbyte:   GETBYTE_IMPL
             rts
 
-; 5
             ; must not change the state of the carry flag
 drivebusy:  sty VIA1_PRB
             sei; disable watchdog
             rts
 
-; 21 - loadfile code
+waitsync:   ldx #$fe
+            stx VIA2_T1C_H; reset the sync time-out
+:           lda VIA2_T1C_H
+            beq wsynctmout
+            bit VIA2_PRB
+            bmi :-
+:           lda VIA2_PRA; reads $ff and then $52 (header) or $55 (data)
+            alr #(GCR_NIBBLE_MASK << 1) | 1;    ;   ...22222:3 - and + lsr
+            clv
+            bvc *
+            inx
+            bne :-
+            rts
+wsynctmout: pla; will return to caller
+            pla; of blockload routine
+            sec; operation not successful
+checkchg:   lax VIA2_PRB; check light sensor for disk removal
+            eor DISKCHANGEBUFFER
+            and #WRITE_PROTECT
+            stx DISKCHANGEBUFFER
+            beq :+
+            sta DISKCHANGED; set the new disk flag when disks have been changed
+:           rts
+
+			; the routine above must not be called from the watchdog
+			; IRQ handler, as it may be overwritten on watchdog IRQ
+
+            ; * >= $0100
+stack:
+            .assert stack >= $0100, error, "***** 1541 stack too low in memory. *****"
+
+.if LOAD_ONCE
+            .byte $00, $00, $00; padding, best used for bigger stack
+.endif
+			.word $00; padding, best used for bigger stack
+            .word $00, $00, dcodinit - $01, runmodule - $01; return addresses for install
+stackend:   ; stacktop + 1
+            .assert stackend < $0200, error, "***** 1541 stack too high in memory. *****"
+
+decodehdr:  lda GCRBUFFER + $06
+            alr #(GCR_NIBBLE_MASK << 1) | 1; and + lsr
+            tay
+            lda GCRBUFFER + $05
+            jsr decodesub - $01; checksum
+            sta GCRBUFFER + $06
+            lax GCRBUFFER + $02
+            lsr
+            lsr
+            lsr
+            tay
+            txa
+            asl GCRBUFFER + $01
+            rol
+            asl GCRBUFFER + $01
+            rol
+            and #GCR_NIBBLE_MASK
+            jsr decodesub + $03; ID1
+            sta GCRBUFFER + $05
+            lda GCRBUFFER + $01
+            lsr
+            lsr
+            lsr
+            tay
+            lda GCRBUFFER + $00; ID0
+            ror
+decodesub:  lsr
+            lsr
+            lsr
+            tax
+            lda GCRDECODEHI,y
+            ora GCRDECODELO,x
+            rts
+
+gcrdecode:  ldx HINIBBLES,y
+            lda GCRDECODEHI,x
+            ldx LONIBBLES,y
+            ora GCRDECODELO,x
+            ldx NUMFILES; loadfile code
+            iny
+            rts
+
+; loadfile code
 gcrencode:  pha
             and #BINARY_NIBBLE_MASK
             tax
@@ -281,42 +363,26 @@ gcrencode:  pha
             sta HINIBBLES,y
             rts
 
-; 16
-gcrdecode:  ldx HINIBBLES,y
-            lda GCRDECODEHI,x
-            ldx LONIBBLES,y
-            ora GCRDECODELO,x
-            ldx NUMFILES; loadfile code
-            iny
-            rts
+busyledon:  lda #BUSY_LED
+            ora VIA2_PRB
+            bne store_via2
 
-; 29
-waitsync:   ldx #$ff
-            stx VIA2_T1C_H; reset the sync time-out
-            inx
-            sec
-:           lda VIA2_T1C_H
-            beq wsynctmout; will return $00 in the accu
-            bit VIA2_PRB
-            bmi :-
-            jsr read1stdat; reads $ff
-            ; VIA2_PRA never reads $00 here but usually $52 (header) or $55 (data)
-read1stdat: lda VIA2_PRA
-            alr #(GCR_NIBBLE_MASK << 1) | 1;    ;   ...22222:3 - and + lsr
-            clv
-            bvc *
-wsynctmout: rts
-
-            ; * >= $0100
-stack:
-            .assert stack >= $0100, error, "***** 1541 stack too low in memory. *****"
-
-.if LOAD_ONCE
-            .res 3; padding, best used for bigger stack
-.endif
-            .word $00, $00, dcodinit - $01, runmodule - $01; return addresses for install
-stackend:   ; stacktop + 1
-            .assert stackend < $0200, error, "***** 1541 stack too high in memory. *****"
+fadeled:    tya
+            tax
+            beq :++++
+:           inx
+            bne :-
+            tax
+            jsr busyledon
+:           dex
+            bne :-
+            dey
+            bne :+
+            and #.lobyte(~MOTOR)   ; turn off motor
+:           and #.lobyte(~BUSY_LED); turn off busy led
+store_via2: sta VIA2_PRB
+errorretlo: sec
+:           rts
 
             ; getblock calls
             ; in: a: track
@@ -354,16 +420,15 @@ getblkscan: sta scanswt0
             ; thus a timeout only indicates a sync-less track range
             ; (about 65536 / 200,000 * 19 = 6.23 sectors), but exclusively non-header
             ; syncs or missing sectors or similar will leave the loader spinning forever
-readblock:  jsr waitsync
-            beq wsynctmout; returns with carry set on time-out
+readblock:  jsr waitsync; returns to caller of this routine upon time-out
             ; check if the sync is followed by a sector header
             bcs readblock; if not, wait for next sync mark
 
             ; read the sector header
 gotheader:  ldx #$06
-getheader:  bvc *
-            lda VIA2_PRA
+getheader:  lda VIA2_PRA
             clv
+            bvc *
             sta GCRBUFFER + $00,x
             dex
             bpl getheader
@@ -407,8 +472,28 @@ getheader:  bvc *
 
 waitdatahd: sta BLOCKINDEX; store sector index
 
+            jsr decodehdr
+
+            ; checksum block header
+            tay; ID0
+            eor GCRBUFFER + $05; ID1
+            eor LOADEDSECTOR
+            eor GCRBUFFER + $06; checksum
+            sta CURTRACK; is changed to eor CURTRACK after init
+headerchk:  .byte OPC_BIT_ZP, .lobyte(errorretlo - * - $01); is changed to bne errorret
+                                                           ; after init, wait for next sector if
+                                                           ; sector header checksum was not ok
+                                                           ; error or cycle candidate
+
+            lda GCRBUFFER + $05; ID1
+            ldx #$00; set z-flag which won't be altered by the store opcodes
+storputid0: cpy ID0; cpy ID0/sty ID0
+            bne cmpidswtch
+storputid1: cmp ID1; cmp ID1/sta ID1
+cmpidswtch: bne errorretlo; branch if the disk ID does not match
+
             ; wait for data block sync
-            jsr waitsync
+            jsr waitsync; returns to caller of this routine upon time-out
             ; check if the sync is followed by a data block
             bcc gotheader; if not, treat as new header
                          ; error or cycle candidate
@@ -419,7 +504,7 @@ waitdatahd: sta BLOCKINDEX; store sector index
             clv  ; this portion can't be replaced by calling the similar bit
             bvc *; at the end of waitsync because of too big calling overhead
            ;ldx #$00
-loaddata:   ldy VIA2_PRA                    ; 14 ;   33334444      1 - cycle 14 in [0..25]
+loaddata:   ldy VIA2_PRA                    ; 14 ;   33334444     1 - cycle 14 in [0..25]
             sta HINIBBLES + $00,x           ; 19
             tya                             ; 21
             ror                             ; 23 ;   33333444
@@ -428,7 +513,7 @@ loaddata:   ldy VIA2_PRA                    ; 14 ;   33334444      1 - cycle 14 
             lsr                             ; 29 ;   ...33333   - final: 3
             sta LONIBBLES + $00,x           ; 34
             txa                             ; 36
-            axs #-$03                       ; 38 ; x = x + 3
+            axs #.lobyte(-$03); x = x + 3   ; 38
             tya                             ; 40 ;   33334444
             ldy VIA2_PRA                    ; 44 ;   45555566     2 - cycle 44 in [32..51]
             clv                             ; 46                    - cycle 46 in [32..51]
@@ -437,10 +522,10 @@ loaddata:   ldy VIA2_PRA                    ; 14 ;   33334444      1 - cycle 14 
             and #GCR_NIBBLE_MASK            ; 52 ;   ...44444   - final: 4
                ; 52 cycles in [0..51]
 
-            bvc *                           ;  3 ;   3 cycles variance
+            bvc *                           ;  3 ; 3 cycles variance
             sta HINIBBLES + $01 - 3,x       ;  8
             tya                             ; 10 ;   45555566
-            alr #%01111111                  ; 12 ;   ..555556:6 - and + lsr
+            alr #%01111111; and + lsr       ; 12 ;   ..555556:6
             sta LONIBBLES + $01 - 3,x       ; 17
             lda VIA2_PRA                    ; 21 ;   66677777     3 - cycle 16 in [0..25]
             tay                             ; 23
@@ -507,7 +592,7 @@ gcrfinish:  lda LONIBBLES + $03,x           ;        11122222     4
             eor GCRDECODELO,y               ;                     4
             tay                             ;                     2
             txa                             ;                     2
-            axs #-$04; x = x + 4            ;                     2
+            axs #.lobyte(-$04); x = x + 4   ;                     2
 scanswt1:   bne gcrfinish                   ;                     3 = 75
                                             ;                       = 105
 
@@ -516,34 +601,10 @@ scanswt1:   bne gcrfinish                   ;                     3 = 75
             tya
             beq :+; check whether data checksum is ok
             txa
-            beq errorret; only return an error if the full block has been checksummed
-
-:           ; this is done only now because there is no time for that between
-            ; the sector header and data block
-            jsr decodehdr
-
-            ; checksum sector header
-            tay; ID0
-            eor GCRBUFFER + $05; ID1
-            eor LOADEDSECTOR
-            eor GCRBUFFER + $06; checksum
-            sta CURTRACK; is changed to eor CURTRACK after init
-headerchk:  .byte OPC_BIT_ZP, .lobyte(errorret - * - $01); is changed to bne errorret
-                                                         ; after init, wait for next sector if
-                                                         ; sector header checksum was not ok
-                                                         ; error or cycle candidate
-
-            lda GCRBUFFER + $05; ID1
-            ldx #$00; set z-flag which won't be altered by the store opcodes
-storputid0: cpy ID0; cpy ID0/sty ID0
-            bne :+
-storputid1: cmp ID1; cmp ID1/sta ID1
-
-:           clc; the next opcode may be an rts, so denote operation successful here
-dsctcmps:   bne errorret; branch if the disk ID does not match
+            beq errorrethi; only return an error if the full block has been checksummed
 
             ldy #$00
-            jsr gcrdecode; decode the block's first byte (track link)
+:           jsr gcrdecode; decode the block's first byte (track link)
             sta LINKTRACK
             jsr gcrdecode; decode the block's second byte (sector link)
 
@@ -551,17 +612,16 @@ dsctcmps:   bne errorret; branch if the disk ID does not match
             inx
             beq :++; branch on ANYSECTOR: no sector link sanity check
             ; gets here on ANYSECTORSANELINK, UNPROCESSEDSECTOR, or requested sector
-
             sta LINKSECTOR
             ; sector link sanity check
             ldy LINKTRACK
             beq :+
             cpy #MAXTRACK41 + 1; check whether track link is within the valid range
-            bcs errorret; if not, return error
+            bcs errorrethi; if not, return error
             jsr getnumscts
             dex
             cpx LINKSECTOR; check whether sector link is within the valid range
-            bcc errorret; branch if sector number too large
+            bcc errorrethi; branch if sector number too large
 
             ; the link track is returned last so that the z-flag
             ; is set if this block is the file's last one
@@ -570,81 +630,12 @@ dsctcmps:   bne errorret; branch if the disk ID does not match
             lda LINKTRACK   ; return the loader block's sector link track number
             clc             ; operation successful
             rts
-
-lightsub:   tya
-            tax
-            beq :++++
-:           inx
-            bne :-
-            tax
-            jsr ddliteon
-:           dex
-            bne :-
-            dey
-            bne :+
-            and #~MOTOR   ; turn off motor
-:           and #~BUSY_LED; turn off busy led
-store_via2: sta VIA2_PRB
-errorret:   sec
-:           rts
-
-ddliteon:   lda #BUSY_LED
-            ora VIA2_PRB
-            bne store_via2
-
-decodehdr:  lda GCRBUFFER + $06
-            alr #(GCR_NIBBLE_MASK << 1) | 1; and + lsr
-            tay
-            lda GCRBUFFER + $05
-            jsr decodesub - $01; checksum
-            sta GCRBUFFER + $06
-            lax GCRBUFFER + $02
-            lsr
-            lsr
-            lsr
-            tay
-            txa
-            asl GCRBUFFER + $01
-            rol
-            asl GCRBUFFER + $01
-            rol
-            and #GCR_NIBBLE_MASK
-            jsr decodesub + $03; ID1
-            sta GCRBUFFER + $05
-            lda GCRBUFFER + $01
-            lsr
-            lsr
-            lsr
-            tay
-            lda GCRBUFFER + $00; ID0
-            ror
-decodesub:  lsr
-            lsr
-            lsr
-            tax
-            lda GCRDECODEHI,y
-            ora GCRDECODELO,x
+errorrethi: sec             ; operation not successful
             rts
-
-; 15
-checkchg:   ; must not change y
-            lax VIA2_PRB; check light sensor for disk removal
-            eor DISKCHANGEBUFFER
-            and #WRITE_PROTECT
-            stx DISKCHANGEBUFFER
-            beq :+
-            sta DISKCHANGED; set the new disk flag when disks have been changed
-:           rts
 
             ; configuration-dependent code
 
 .if !UNINSTALL_RUNS_DINSTALL
-
-uninstallc: tay
-uninstfade: jsr lightsub
-            tya
-            bne uninstfade
-            jmp (RESET_VECTOR)
 
     .if !DISABLE_WATCHDOG
             .assert * >= $0300, error, "***** 1541 watchdog IRQ/BRK handler located below $0300. *****"
@@ -655,44 +646,48 @@ watchdgirq: ldy #$ff
 
 duninstall: tya
             beq :+
-            jsr ddliteon
+            jsr busyledon
             lda #$ff; fade off the busy led
 :           pha
             lda #$12; ROM dir track
             jsr trackseek; ignore error (should not occur)
             pla
-            jmp uninstallc
+            tay
+uninstfade: jsr fadeled
+            tya
+            bne uninstfade
+            jmp (RESET_VECTOR)
 
 .else ; UNINSTALL_RUNS_DINSTALL
 
-            .byte 0, 0; padding
-
-duninstall:
-:           jsr lightsub
-            tya
-            bne :-
-            jmp runcodeget
+            .byte $00; padding
 
     .if !DISABLE_WATCHDOG
             .assert * >= $0300, error, "***** 1541 watchdog IRQ/BRK handler located below $0300. *****"
             .assert * <= $0300, error, "***** 1541 watchdog IRQ/BRK handler located above $0300. *****"
     .endif
 
-watchdgirq: jsr ddliteon
+watchdgirq: jsr busyledon
             lda #$12; ROM dir track
             jsr trackseek; ignore error (should not occur)
             ; fade off the busy led and reset the drive
             ldy #$ff
-:           jsr lightsub
+:           jsr fadeled
             tya
             bne :-
             jmp (RESET_VECTOR)
             
+duninstall:
+:           jsr fadeled
+            tya
+            bne :-
+            jmp runcodeget
+
 .endif; UNINSTALL_RUNS_DINSTALL
 
 trackseek:  tax; destination track
 trackseekx: lda #MOTOR; turn on the motor
-            jsr ddliteon + $02
+            jsr busyledon + $02
             txa; destination track
             beq setbitrate; don't do anything if invalid track
 
@@ -706,7 +701,7 @@ trackseekx: lda #MOTOR; turn on the motor
             ldy #$00
             sty CURRSTEPSPEEDLOW
             bcs :+
-            eor #~$00; invert track difference
+            eor #.lobyte(~$00); invert track difference
             adc #$01
             iny
 :           sty TRACKINC
@@ -753,10 +748,10 @@ noheadacc:  cpx VIA2_T1C_H
 bneuninstl: bne duninstall; jmp
 
             ; bit-rates:
-            ; 31+   (17): 00 (innermost)
-            ; 25-30 (18): 01
-            ; 18-24 (19): 10
-            ;  1-17 (21): 11 (outermost)
+            ; 31+   (17): %00 (innermost)
+            ; 25-30 (18): %01
+            ; 18-24 (19): %10
+            ;  1-17 (21): %11 (outermost)
 setbitrate: ldy CURTRACK
             jsr getnumscts
 putbitrate: bit VIA2_PRB  ; is changed to sta VIA2_PRB after init
@@ -784,7 +779,7 @@ getnumscts: lda VIA2_PRB
 
             ; upon first load, this is skipped,
             ; and runmodule is executed directly
-driveidle:  jsr lightsub; fade off the busy led
+driveidle:  jsr fadeled; fade off the busy led
             jsr checkchg; check light sensor for disk removal
             lda VIA1_PRB
             cmp #CLK_OUT | CLK_IN | DATA_IN | ATN_IN
@@ -797,7 +792,7 @@ driveidle:  jsr lightsub; fade off the busy led
 
             tya; led fade counter
             beq runmodule; check whether the busy led has been completely faded off
-            jsr ddliteon ; if not, turn it on
+            jsr busyledon ; if not, turn it on
 
 runmodule:
 .if !LOAD_ONCE
@@ -918,9 +913,9 @@ drvcodeend41:
 dinstall:
             sei
 .if LOAD_ONCE
-            lda #~MOTOR ; the motor is on because of the
-            and VIA2_PRB; file open operation immediately
-            sta VIA2_PRB; before running this code
+            lda #.lobyte(~MOTOR); the motor is on because of the
+            and VIA2_PRB        ; file open operation immediately
+            sta VIA2_PRB        ; before running this code
 .endif
 .if INSTALL_FROM_DISK
             lda ROMOS_HEADER_TRACK
@@ -986,7 +981,7 @@ restart:    ldx #.lobyte(stackend - $05)
     .else
             ldx #JOBCODE0600 - JOBCODE0400 + $80
     .endif
-:           sta .lobyte(JOBCODE0400 - $80),x; clear job queue
+:           sta .lobyte(JOBCODE0400 - $80),x; clear job table
             dex
             bmi :-
 
@@ -996,23 +991,8 @@ restart:    ldx #.lobyte(stackend - $05)
 
             lda #IRQ_SET_FLAGS | IRQ_TIMER_1
             sta VIA2_IER; timer 1 IRQs from VIA 2
+.endif; UNINSTALL_RUNS_DINSTALL
 
-            lda #JOBCODE_EXECUTE
-            sta JOBCODE0300; execute watchdog handler at $0300 on watchdog time-out
-
-            lda #NUMMAXSECTORS
-            sta NUMSECTORS
-
-           ;ldx #$7f
-            stx LOADEDMODULE 
-.else; !UNINSTALL_RUNS_DINSTALL
-            lda #T1_FREE_RUNNING | PA_LATCHING_ENABLE; watchdog IRQ: count phi2 pulses, 16-bit free-running,
-                                                     ; enable port a latching to grab one gcr byte at a time
-                                                     ; rather than letting the gcr bitstream scroll through
-                                                     ; port a (applies to 1541 and Oceanic OC-118, but not
-                                                     ; 1541-II)
-            sta VIA2_ACR
-.endif; !UNINSTALL_RUNS_DINSTALL
             rts; returns to dcodinit
 
 drvprgend41:

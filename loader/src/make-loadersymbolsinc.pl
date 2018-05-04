@@ -14,7 +14,7 @@ sub maybe_print {
     }
 }
 
-$rw = open(FILE, shift ARGV);
+$rw = open(FILE, shift @ARGV);
 
 while (defined($i = <FILE>)) {
 

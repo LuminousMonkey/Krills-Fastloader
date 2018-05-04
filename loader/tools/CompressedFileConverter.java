@@ -4,15 +4,18 @@ public class CompressedFileConverter
 {
     public static void main(String[] params)
     {
-        if (params.length < 4 || params.length > 5 || (!params[0].equals("bb") && !params[0].equals("lc") && !params[0].equals("exo")))
+        if (params.length < 4 || params.length > 5 || (!params[0].equals("bb")
+		                                            && !params[0].equals("dnx")
+		                                            && !params[0].equals("exo")
+													&& !params[0].equals("lc")))
         {
-            System.out.println("Usage:\njava CompressedFileConverter bb|lc|exo [safety-margin] uncompressed_infile compressed_infile outfile.");
+            System.out.println("Usage:\njava CompressedFileConverter bb|dnx|exo|lc [safety-margin] uncompressed_infile compressed_infile outfile.");
         }
         else
         {
             if (params.length == 4)
             {
-                new CompressedFileConverter(params[0], 3, params[1], params[2], params[3]);
+                new CompressedFileConverter(params[0], params[0].equals("dnx") ? 1 : 3 /* default safety-margin */, params[1], params[2], params[3]);
             }
             else
             {
@@ -23,51 +26,11 @@ public class CompressedFileConverter
 
     CompressedFileConverter(String compressor, int safety_margin, String uncompressedInFileName, String compressedInFileName, String outFileName)
     {
-        readCompressedInFile(compressor, compressedInFileName);
         readUncompressedInFile(compressor, uncompressedInFileName);
+        readCompressedInFile(compressor, compressedInFileName);
         convertCompressedInFile(compressor, safety_margin);
         writeOutFile(outFileName);
     }    
-
-    void readCompressedInFile(String compressor, String compressedInFileName)
-    {
-        FileInputStream compressedInFile = null;
-        try
-        {
-            compressedInFile = new FileInputStream(compressedInFileName);
-        }
-        catch (IOException e)
-        {
-            System.out.println(compressedInFileName + " couldn't be opened.");
-            System.exit(-1);
-        }
-
-        try
-        {
-            _compressedFileData = new byte[65536];
-            _compressedInFileLength = 0;
-            
-            if (compressor.equals("bb"))
-            {
-                compressedInFile.read();
-                compressedInFile.read();
-            }
-
-            int value;
-            int i = 2;
-            while ((value = compressedInFile.read()) != -1)
-            {
-                _compressedFileData[i++] = (byte) value;
-            }
-            compressedInFile.close();
-            _compressedInFileLength = i;
-        }
-        catch (IOException e)
-        {
-            System.out.println( "IO error while reading " + compressedInFileName + "." );
-            System.exit(-1);
-        }
-    }
 
     void readUncompressedInFile(String compressor, String uncompressedInFileName)
     {
@@ -100,6 +63,52 @@ public class CompressedFileConverter
         catch (IOException e)
         {
             System.out.println( "IO error while reading " + uncompressedInFileName + "." );
+            System.exit(-1);
+        }
+    }
+
+    void readCompressedInFile(String compressor, String compressedInFileName)
+    {
+        FileInputStream compressedInFile = null;
+        try
+        {
+            compressedInFile = new FileInputStream(compressedInFileName);
+        }
+        catch (IOException e)
+        {
+            System.out.println(compressedInFileName + " couldn't be opened.");
+            System.exit(-1);
+        }
+
+        try
+        {
+            _compressedFileData = new byte[65536];
+            _compressedInFileLength = 0;
+            
+            int i = 2;
+
+            if (compressor.equals("bb"))
+            {
+                // remove start address
+                compressedInFile.read();
+                compressedInFile.read();
+            } else if (compressor.equals("dnx")) {
+                // add destination address
+                _compressedFileData[i++] = (byte) (_uncompressedInFileLoadAddress & 0xff);
+                _compressedFileData[i++] = (byte) (_uncompressedInFileLoadAddress >> 8);
+            }
+
+            int value;
+            while ((value = compressedInFile.read()) != -1)
+            {
+                _compressedFileData[i++] = (byte) value;
+            }
+            compressedInFile.close();
+            _compressedInFileLength = i;
+        }
+        catch (IOException e)
+        {
+            System.out.println( "IO error while reading " + compressedInFileName + "." );
             System.exit(-1);
         }
     }

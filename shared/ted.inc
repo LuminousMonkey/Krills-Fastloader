@@ -244,11 +244,11 @@ done:
             lda #BITMAP_MODE | DISPLAY_ENABLE | LINES_25 | SCROLLY_3
             sta TED_CTRL1
             lda TED_BITMAP_ADDR
-            and #~(BITMAP_ADDR_MASK | CHARSET_BITMAP_IN_ROM)
+            and #.lobyte(~(BITMAP_ADDR_MASK | CHARSET_BITMAP_IN_ROM))
             ora #MAKE_BITMAP_ADDR(bitmap)
             sta TED_BITMAP_ADDR
             lda TED_SCREEN_ADDR
-            and #~SCREEN_ADDR_MASK
+            and #.lobyte(~SCREEN_ADDR_MASK)
             ora #MAKE_SCREEN_ADDR(screen)
             sta TED_SCREEN_ADDR
 .endmacro

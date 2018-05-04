@@ -74,7 +74,7 @@ FILESYSTEM                         = FILESYSTEMS::DIRECTORY_NAME; currently avai
 
 ; features, increase code size
 
-.define JUMP_TABLE                 0 ; add a jump table to the beginning of the DISKIO segment, useful when importing the binaries without symbols
+.define JUMP_TABLE                 0 ; add a jump table to the beginning of the DISKIO_INSTALL and DISKIO segments, useful when importing the binaries without symbols
 
 .define TWO_BITS_RESEND_OPTIMIZE   1 ; C-64 only: for the TWO_BITS_RESEND protocol, quicker loading by using a table,
                                      ; but only 0 or 5..8 sprites are allowed outside IRQ handlers
@@ -186,7 +186,7 @@ POLLINGINTERVAL_BLOCKSOON      = $02 ; timer interval after one of the bigger in
 POLLINGINTERVAL_REPOLL         = $01 ; maximum polling frequency, block is ready but downloading
                                      ; is postponed because of a running IRQ handler
 
-DECOMPRESSOR                   = DECOMPRESSORS::NONE; available are NONE, BYTEBOOZER, LEVELCRUSH, PUCRUNCH, EXOMIZER
+DECOMPRESSOR                   = DECOMPRESSORS::NONE; available are NONE, EXOMIZER, PUCRUNCH, DOYNAX_LZ, BYTEBOOZER, LEVELCRUSH
 
 
 ; INEFFECTIVE or DISENCOURAGED

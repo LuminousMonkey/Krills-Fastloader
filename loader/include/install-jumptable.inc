@@ -19,7 +19,7 @@
     .if PLATFORM = diskio::platform::COMMODORE_16
     .out "  interrupts may be delayed"
     .else
-    .out "  interrupts may be delayed, no sprites or nmis used"
+    .out "  interrupts may be delayed, no sprites or NMIs used"
     .endif
 .endmacro
 
@@ -29,7 +29,7 @@
         .if PLATFORM = diskio::platform::COMMODORE_16
         .out "  interrupts may be delayed"
         .else
-        .out "  interrupts may be delayed, no nmis allowed, no sprites in non-irq space"
+        .out "  interrupts may be delayed, no NMIs allowed, no sprites in non-IRQ space"
         .endif
     .else
         .ifdef USER_INTERRUPT_INSTFEATS

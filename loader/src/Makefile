@@ -21,7 +21,7 @@ endif
 
 
 SVNVERSION   = svnversion
-ifneq ($(wildcard ../.svn/format),)
+ifneq ($(wildcard ../../.svn/format),)
 VERSION      = $(shell $(SVNVERSION) | tr -d [:cntrl:])
 else
 VERSION      =
@@ -77,19 +77,20 @@ INSTALLDEPS  = $(CONFIG) $(BUILDDIR) $(INTERMDIR) \
                ../version.inc Makefile
 
 RESIDENTDEPS = $(CONFIG) $(BUILDDIR) $(INTERMDIR) \
-               $(DECOMPDIR)/pudecomp.s $(DECOMPDIR)/bbdecomp.s $(DECOMPDIR)/lcdecomp.s $(DECOMPDIR)/exodecomp.s \
+               $(DECOMPDIR)/exodecomp.s $(DECOMPDIR)/pudecomp.s $(DECOMPDIR)/doynaxdecomp.s $(DECOMPDIR)/bbdecomp.s $(DECOMPDIR)/lcdecomp.s \
                $(HALDIR)/hal.inc $(HALDIR)/hal-c64.inc $(HALDIR)/hal-c16.inc \
-               $(RESIDENTDIR)/resident.s \
+               $(RESIDENTDIR)/resident.s $(RESIDENTDIR)/decompress.s \
                $(LDRINC)/loader.inc $(LDRINC)/option-check.inc $(LDRINC)/common-features.inc $(LDRINC)/resident-jumptable.inc $(LDRINC)/install-jumptable.inc $(LDRINC)/diskio.inc \
                ../version.inc Makefile
 
+BINDEPS      = $(BUILDDIR)/loadersymbols-$(_PLATFORM_).inc $(BUILDDIR)/loader-$(_PLATFORM_).prg $(CONFIG)
 
 ifeq ($(_PLATFORM_),c16)
 AS_FLAGS   += -t c16 -D PLATFORM=16
 else
 AS_FLAGS   += -t c64 -D PLATFORM=64
 endif
-AS_FLAGS   += -I $(INCDIR) -I $(LDRINC)
+AS_FLAGS   += -I . -I $(INCDIR) -I $(LDRINC)
 ifneq ($(EXTCONFIGPATH),)
 AS_FLAGS   += -D EXTCONFIGPATH -I $(EXTCONFIGPATH)
 endif
@@ -103,9 +104,14 @@ default: lib
 all: lib prg
 
 # use these targets to build loader.prg and install.prg
-prg: $(BUILDDIR)/loader-$(_PLATFORM_).zip
+prg: $(BINDEPS)
 bin: prg
 binary: bin
+
+prgzip: $(BUILDDIR)/loader-$(_PLATFORM_).zip
+binzip: prgzip
+binaryzip: binzip
+
 
 lib: lib-basic # lib-full for dynlink stuff
 so: so-basic # so-full for dynlink stuff
@@ -114,13 +120,13 @@ dll: so
 mods: drivecode1541-loadfile.prg
 
 
-../.svn/entries:
+../../.svn/entries:
 ifeq ($(VERSION),)
-	$(MKDIR) ../.svn
+	$(MKDIR) ../../.svn
 	$(TOUCH) $@
 endif
 
-../version.inc: ../.svn/entries
+../version.inc: ../../.svn/entries
 	$(MAKE) -C .. version.inc
 
 
@@ -219,12 +225,12 @@ $(BUILDDIR)/loader-$(_PLATFORM_).prg $(BUILDDIR)/install-$(_PLATFORM_).prg: $(IN
 	$(LD) -C $(INTERMDIR)/binary.link -vm -m $(INTERMDIR)/loader-$(_PLATFORM_).map $(INTERMDIR)/zp-resident.o $(INTERMDIR)/loader-nonreloc-$(_PLATFORM_).o $(INTERMDIR)/install-nonreloc-$(_PLATFORM_).o
 	$(RM) a.out
 
-$(INTERMDIR)/loader-$(_PLATFORM_).map: $(BUILDDIR)/install-$(_PLATFORM_).prg $(BUILDDIR)/install-$(_PLATFORM_).prg
+$(INTERMDIR)/loader-$(_PLATFORM_).map: $(BUILDDIR)/install-$(_PLATFORM_).prg
 
 $(BUILDDIR)/loadersymbols-$(_PLATFORM_).inc: $(INTERMDIR)/loader-$(_PLATFORM_).map
 	$(PERL) make-loadersymbolsinc.pl $^ > $@
 
-$(BUILDDIR)/loader-$(_PLATFORM_).zip: $(BUILDDIR)/loadersymbols-$(_PLATFORM_).inc $(BUILDDIR)/loader-$(_PLATFORM_).prg $(BUILDDIR)/install-$(_PLATFORM_).prg $(CONFIG)
+$(BUILDDIR)/loader-$(_PLATFORM_).zip: $(BINDEPS)
 	$(CD) $(BUILDDIR) \
 	 && $(CP) $(BUILDDIR)/loader-$(_PLATFORM_).prg $(INTERMDIR)/loader.prg && $(ZIP) -j $@ $(INTERMDIR)/loader.prg \
 	 && $(CP) $(BUILDDIR)/install-$(_PLATFORM_).prg $(INTERMDIR)/install.prg && $(ZIP) -j $@ $(INTERMDIR)/install.prg \

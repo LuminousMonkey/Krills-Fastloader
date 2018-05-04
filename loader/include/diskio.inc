@@ -74,75 +74,78 @@ FUNCTION_DESIRED         = %10000000; desired functions that cannot be imported 
                                     ;      c    - error
 
     LOAD_RAW                 =   12
-    LOAD_COMPRESSED_LC       =   13
-    LOAD_COMPRESSED_BB       =   14
-    LOAD_COMPRESSED_PU       =   15
-    LOAD_COMPRESSED_EXO      =   16
+    LOAD_COMPRESSED_EXO      =   13
+    LOAD_COMPRESSED_PU       =   14
+    LOAD_COMPRESSED_DNX      =   15
+    LOAD_COMPRESSED_BB       =   16
+    LOAD_COMPRESSED_LC       =   17
     ; XXX TODO make space for future decompressors
-    MEM_DECOMPRESS_LC        =   17
-    MEM_DECOMPRESS_BB        =   18
+    MEM_DECOMPRESS_EXO       =   18
     MEM_DECOMPRESS_PU        =   19
-    MEM_DECOMPRESS_EXO       =   20
-    MEM_CDECOMPRESS_LC       =   21
-    MEM_CDECOMPRESS_BB       =   22
-    MEM_CDECOMPRESS_PU       =   23
-    MEM_CDECOMPRESS_EXO      =   24
+    MEM_DECOMPRESS_DNX       =   20
+    MEM_DECOMPRESS_BB        =   21
+    MEM_DECOMPRESS_LC        =   22
+    MEM_CDECOMPRESS_EXO      =   23
+    MEM_CDECOMPRESS_PU       =   24
+    MEM_CDECOMPRESS_DNX      =   25
+    MEM_CDECOMPRESS_BB       =   26
+    MEM_CDECOMPRESS_LC       =   27
     ; XXX TODO make space for future decompressors
 
     ; direct I/O routines
 
-    GET_SECTOR_COUNT         =   25 ; out: a    - number of logical sectors
+    GET_SECTOR_COUNT         =   28 ; out: a    - number of logical sectors
 
-    GET_SECTOR_SIZE          =   26 ; out: x/y  - sector size
+    GET_SECTOR_SIZE          =   29 ; out: x/y  - sector size
 
-    READ_SECTOR              =   27 ; in:  a    - head
+    READ_SECTOR              =   30 ; in:  a    - head
                                     ;      x    - track
                                     ;      y    - sector
                                     ;      p4/5 - buffer
                                     ; out: a    - status
                                     ;      c    - error
 
-    WRITE_SECTOR             =   28 ; in:  a    - head
+    WRITE_SECTOR             =   31 ; in:  a    - head
                                     ;      x    - track
                                     ;      y    - sector
                                     ;      p4/5 - buffer
                                     ; out: a    - status
                                     ;      c    - error
 
-    WRITE_SECTOR_VERIFY      =   29 ; in:  a    - head
+    WRITE_SECTOR_VERIFY      =   32 ; in:  a    - head
                                     ;      x    - track
                                     ;      y    - sector
                                     ;      p4/5 - buffer
                                     ; out: a    - status
                                     ;      c    - error
 
-    SECTOR_TO_PHYS           =   30 ; in:  x/y - logical sector number
+    SECTOR_TO_PHYS           =   33 ; in:  x/y - logical sector number
                                     ; out: a   - head
                                     ;      x   - track
                                     ;      y   - sector
 
-    PHYS_TO_SECTOR           =   31 ; in:  a   - head
+    PHYS_TO_SECTOR           =   34 ; in:  a   - head
                                     ;      x   - track
                                     ;      y   - sector
                                     ; out: x/y - logical sector number
 
 
-    SET_CURRENT_DRIVE        =   32 ; in:  a   - new current drive
+    SET_CURRENT_DRIVE        =   35 ; in:  a   - new current drive
                                     ; out: a   - status
                                     ;      c   - error
 
-    GET_FREE_CAPACITY        =   33 ; out: a   - status
+    GET_FREE_CAPACITY        =   36 ; out: a   - status
                                     ;      x/y - free capacity in bytes
 
-    LOAD_FILE_RAW_NB         =   34 ; non-blocking, loads a file in the background
-    NON_BLOCKING_IRQ_HANDLER =   35
+    LOAD_FILE_RAW_NB         =   37 ; non-blocking, loads a file in the background
+    NON_BLOCKING_IRQ_HANDLER =   38
 
-    EXECUTE_COMMAND          =   36 ; in:  x/y - pointer to 0-terminated command string
+    EXECUTE_COMMAND          =   39 ; in:  x/y - pointer to 0-terminated command string
                                     ; out: a   - status
                                     ;      x/y - pointer to 0-terminated error string
                                     ;      c   - error
 
-    GET_HASH                =    37 ; in:  x/y - pointer to 0-terminated file name
+    GET_HASH                =    40 ; in:  x/y - pointer to 0-terminated file name
                                     ; out: x/y - 16-bit hash value
 
     UNINSTALL                =  126 ; never fails
@@ -153,7 +156,7 @@ FUNCTION_DESIRED         = %10000000; desired functions that cannot be imported 
                                     ; out: a   - status
                                     ;      c   - set: error, clear: supported
 
-    END_OF_LIST              =   -1
+    END_OF_LIST              =  .lobyte(-1)
 .endenum
 
 ; 6. read chunk into user buffer
@@ -209,17 +212,17 @@ FILE_IDENTIFICATION          =    4
 
 ; compression
 COMPRESSION                  =    5 ; unspecified implies raw
- OXYPACKER                  = 0
- TABOO_LEVELCRUSH_SPEED_0   = 1
- TABOO_LEVELCRUSH_SPEED_1   = 2
- TABOO_LEVELCRUSH_SPEED_2   = 3
- TABOO_LEVELCRUSH_SPEED_3   = 4
- TABOO_LEVELCRUSH_SPEED_4   = 5
- TABOO_LEVELCRUSH_SPEED_5   = 6
- TABOO_LEVELCRUSH_SPEED_6   = 7
- BYTEBOOZER                 = 8
- PUCRUNCH                   = 9
- EXOMIZER                   = 10
+ EXOMIZER                   = 0
+ PUCRUNCH                   = 1
+ DOYNAX_LZ                  = 2
+ BYTEBOOZER                 = 3
+ TABOO_LEVELCRUSH_SPEED_0   = 4
+ TABOO_LEVELCRUSH_SPEED_1   = 5
+ TABOO_LEVELCRUSH_SPEED_2   = 6
+ TABOO_LEVELCRUSH_SPEED_3   = 7
+ TABOO_LEVELCRUSH_SPEED_4   = 8
+ TABOO_LEVELCRUSH_SPEED_5   = 9
+ TABOO_LEVELCRUSH_SPEED_6   = 10
 
 
 ; negative numbers,
@@ -346,9 +349,9 @@ SELECTIVE_UNINSTALL          =  148 ; if c is set when calling, the drive-side r
     DRIVE_CMD_FD_4000        =  $29
     DRIVE_CMD_HD             =  $2a
 
-    DRIVE_GENERIC            = -$03
-    DEVICE_UNKNOWN           = -$02
-    DEVICE_NONE              = -$01
+    DRIVE_GENERIC            = .lobyte(-$03)
+    DEVICE_UNKNOWN           = .lobyte(-$02)
+    DEVICE_NONE              = .lobyte(-$01)
 .endscope; drivetype
 
 ; File mode constants, must match the values in the C headers
@@ -379,29 +382,30 @@ SELECTIVE_UNINSTALL          =  148 ; if c is set when calling, the drive-side r
     MLOAD_ERR_FMT            =  $04 ; Data format error
     MLOAD_ERR_MEM            =  $05 ; Not enough memory
 
-    DYNLINK_FALLBACK_USED    =  $06 ; not an error, dynamic linkage failed and the fallback routines are used
+    DYNLINK_FALLBACK_FAILED  =  $06 ; dynamic linkage of fallback library failed
+    DYNLINK_FALLBACK_USED    =  $07 ; not an error, dynamic linkage failed and the fallback routines are used
 
-    CHANGING_TRACK           =  $07 ; not an error, used by the polling system and the non-blocking routines to minimize idle time overhead when track seeking
+    CHANGING_TRACK           =  $08 ; not an error, used by the polling system and the non-blocking routines to minimize idle time overhead when track seeking
 
     BUSY                     =  $40 ; not an error, used by non-blocking routines, bit 6 must be set
 
-    INTERNAL_ERROR           = -$80
+    INTERNAL_ERROR           = .lobyte(-$80)
 
-    FILE_OPEN                = -$0f
-    EOF                      = -$0e
-    WRONG_VERSION            = -$0d
-    HEADER_ERROR             = -$0c ; invalid disk I/O library
-    READ_ONLY                = -$0b
-    VERIFY_FAILED            = -$0a
-    NOT_SUPPORTED            = -$09 ; function is not implemented or not all requested functions have been imported
-    FILE_NOT_OPEN            = -$08
-    ILLEGAL_TRACK_OR_SECTOR  = -$07 ; faulty file or extended tracks while using KERNAL fallback
-    INVALID_PARAMETERS       = -$06 ; illegal track or sector, invalid import request, etc.
-    FILE_NOT_FOUND           = -$05
-    DEVICE_NOT_PRESENT       = -$04
-    DEVICE_INCOMPATIBLE      = -$03 ; if LOAD_VIA_KERNAL_FALLBACK != 0, don't regard this as an error
-    TOO_MANY_DEVICES         = -$02 ; for ONE_DRIVE_ON_BUS, if LOAD_VIA_KERNAL_FALLBACK != 0, don't regard this as an error
-    GENERIC_KERNAL_ERROR     = -$01 ; an error occured while loading without installed drive code via KERNAL fallback,
+    FILE_OPEN                = .lobyte(-$0f)
+    EOF                      = .lobyte(-$0e)
+    WRONG_VERSION            = .lobyte(-$0d)
+    HEADER_ERROR             = .lobyte(-$0c) ; invalid disk I/O library
+    READ_ONLY                = .lobyte(-$0b)
+    VERIFY_FAILED            = .lobyte(-$0a)
+    NOT_SUPPORTED            = .lobyte(-$09) ; function is not implemented or not all requested functions have been imported
+    FILE_NOT_OPEN            = .lobyte(-$08)
+    ILLEGAL_TRACK_OR_SECTOR  = .lobyte(-$07) ; faulty file or extended tracks while using KERNAL fallback
+    INVALID_PARAMETERS       = .lobyte(-$06) ; illegal track or sector, invalid import request, etc.
+    FILE_NOT_FOUND           = .lobyte(-$05)
+    DEVICE_NOT_PRESENT       = .lobyte(-$04)
+    DEVICE_INCOMPATIBLE      = .lobyte(-$03) ; if LOAD_VIA_KERNAL_FALLBACK != 0, don't regard this as an error
+    TOO_MANY_DEVICES         = .lobyte(-$02) ; for ONE_DRIVE_ON_BUS, if LOAD_VIA_KERNAL_FALLBACK != 0, don't regard this as an error
+    GENERIC_KERNAL_ERROR     = .lobyte(-$01) ; an error occured while loading without installed drive code via KERNAL fallback,
                                     ; check the x register for further information
 .endscope; status
 

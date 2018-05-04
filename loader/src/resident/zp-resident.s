@@ -29,14 +29,16 @@ GETCHUNK_VARS:
 DECOMPVARS:
     .exportzp DECOMPVARS
 
-    .if DECOMPRESSOR = DECOMPRESSORS::PUCRUNCH
+    .if DECOMPRESSOR = DECOMPRESSORS::EXOMIZER
+              .res 5
+    .elseif DECOMPRESSOR = DECOMPRESSORS::PUCRUNCH
               .res 3
+    .elseif DECOMPRESSOR = DECOMPRESSORS::DOYNAX_LZ
+              .res 2
     .elseif DECOMPRESSOR = DECOMPRESSORS::BYTEBOOZER
               .res 6
     .elseif DECOMPRESSOR = DECOMPRESSORS::LEVELCRUSH
               .res 2
-    .elseif DECOMPRESSOR = DECOMPRESSORS::EXOMIZER
-              .res 5
     .endif
 .endmacro
 
@@ -140,7 +142,7 @@ DECOMPVARS:
     alloc_zpvar endaddrhi   ; ENDADDRHIOFFS    = 8
     .else
         .if LOAD_PROGRESS_API
-            .if DECOMPRESSOR = DECOMPRESSORS::LEVELCRUSH && (!GETCHUNK_API)
+            .if ((DECOMPRESSOR = DECOMPRESSORS::DOYNAX_LZ) | (DECOMPRESSOR = DECOMPRESSORS::LEVELCRUSH)) && (!GETCHUNK_API)
             alloc_decompvars
             .else
             alloc_next_zpvars_2

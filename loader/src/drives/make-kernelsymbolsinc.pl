@@ -8,7 +8,7 @@ sub maybe_print {
     push(@symbols, \@symbol);
 }
 
-$rw = open(FILE, shift ARGV) or die('failed to open input file');
+$rw = open(FILE, shift @ARGV) or die('failed to open input file');
 
 while (defined($i = <FILE>)) {
 

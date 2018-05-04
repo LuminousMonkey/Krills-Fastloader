@@ -145,7 +145,7 @@ dcodinit:   tsx
             beq :++
             ; turn it off if so
             ldx #$ff
-:           jsr lightsub
+:           jsr fadeled
             txa
             bne :-
 :
@@ -212,7 +212,7 @@ dcodinit:   tsx
             bne :-; no watchdog
 .endif; !LOAD_ONCE
 
-drividle:   jsr lightsub; fade off the busy led
+drividle:   jsr fadeled; fade off the busy led
             lda CIA_PRB
             and #ATN_IN | ATNA_OUT | CLK_OUT | CLK_IN | DATA_OUT | DATA_IN
             cmp #ATN_IN |            CLK_OUT | CLK_IN |            DATA_IN
@@ -226,7 +226,7 @@ drividle:   jsr lightsub; fade off the busy led
 
 :           txa
             beq beginload; check whether the busy led has been completely faded off
-            jsr ddliteon ; if not, turn it on
+            jsr busyledon; if not, turn it on
 beginload:
 
 .if !LOAD_ONCE
@@ -436,7 +436,7 @@ cmdfdfix0:  jmp illegalts; is changed to bit illegalts on FD2000/4000 to disable
 
 :           tya
             pha
-            jsr ddliteon
+            jsr busyledon
             pla
             tay; FILESECTOR
             txa; FILETRACK
@@ -577,15 +577,20 @@ enablewdog: lda cmdfdfix2; 0 for FD
             rts
 .endif; !DISABLE_WATCHDOG
 
-lightsub:   txa
+busyledon:  lda #DRIVE_LED
+            ora CIA_PRA
+            ldy #$ff
+            bne store_cia; jmp
+
+fadeled:    txa
             tay
-            beq lightisoff
+            beq ledisoff
 :           nop
             bit OPC_BIT_ZP
             iny
             bne :-
             pha
-            jsr ddliteon
+            jsr busyledon
             pla
             tay
 :           nop
@@ -593,7 +598,7 @@ lightsub:   txa
             dey
             bne :-
             dex
-            bne ddliteoff
+            bne busyledoff
 
 motrledoff: ; turn off motor
             txa
@@ -607,17 +612,12 @@ motrledoff: ; turn off motor
             pla
             tax
 
-ddliteoff:  lda CIA_PRA
-            and #~DRIVE_LED; turn off drive led
+busyledoff: lda CIA_PRA
+            and #.lobyte(~DRIVE_LED); turn off drive led
             ldy #$00
 store_cia:  sta CIA_PRA
             sty LED_FLAG
-lightisoff: rts
-
-ddliteon:   lda #DRIVE_LED
-            ora CIA_PRA
-            ldy #$ff
-            bne store_cia; jmp
+ledisoff:   rts
 
 getblock:   sta JOBTRKSCTTABLE + (2 * BUFFERINDEX) + TRACKOFFSET
             sty JOBTRKSCTTABLE + (2 * BUFFERINDEX) + SECTOROFFSET
@@ -650,14 +650,14 @@ watchdgirq: ldx #$ff
 
 duninstall: txa
             beq :+
-            jsr ddliteon
+            jsr busyledon
             lda #$ff; fade off the busy led
 :           pha
             jsr getdirtrk
             jsr trackseek
             pla
             tax
-:           jsr lightsub
+:           jsr fadeled
             txa
             bne :-
             ldx SYS_SP
@@ -669,12 +669,12 @@ duninstall: txa
 
     .if !DISABLE_WATCHDOG
 
-watchdgirq: jsr ddliteon
+watchdgirq: jsr busyledon
             jsr getdirtrk
             jsr trackseek
             ; fade off the busy led and reset the drive
             ldx #$ff
-:           jsr lightsub
+:           jsr fadeled
             txa
             bne :-
             ldx SYS_SP
@@ -685,7 +685,7 @@ watchdgirq: jsr ddliteon
     .endif; !DISABLE_WATCHDOG
 
 duninstall:
-:           jsr lightsub
+:           jsr fadeled
             txa
             bne :-
             ldx SYS_SP
@@ -697,7 +697,7 @@ duninstall:
 
 .if (::FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME) & (!LOAD_ONCE)
 
-fnamehash:  ldx #-$01 - LOAD_FILE_VALUE - 1
+fnamehash:  ldx #.lobyte(-$01 - LOAD_FILE_VALUE - 1)
 :           lda BLOCKBUFFER + $02,y
             iny
             cmp #' ' | $80; $a0 = end of filename
@@ -774,7 +774,7 @@ sendloop:   ldx BLOCKBUFFER,y                                        ; 4
             nop                                                      ; 2
             nop                                                      ; 2
             asl                                                      ; 2
-            and #~ATNA_OUT                                           ; 2
+            and #.lobyte(~ATNA_OUT)                                  ; 2
             sta CIA_PRB                                              ; 4
                                                                      ; = 16
 
@@ -791,7 +791,7 @@ sendloop:   ldx BLOCKBUFFER,y                                        ; 4
             nop                                                      ; 2
             nop                                                      ; 2
             asl                                                      ; 2
-            and #~ATNA_OUT                                           ; 2
+            and #.lobyte(~ATNA_OUT)                                  ; 2
             sta CIA_PRB                                              ; 4
                                                                      ; = 16
 
@@ -839,7 +839,7 @@ cmdfdfix4 = * + 1
             bmi :-                                                   ; 3
             sta CIA_PRB                                              ; 4
             asl                                                      ; 2
-            and #~ATNA_OUT                                           ; 2
+            and #.lobyte(~ATNA_OUT)                                  ; 2
                                                                      ; = 15
 
 :           bit CIA_PRB                                              ; 4
@@ -853,7 +853,7 @@ cmdfdfix4 = * + 1
             bmi :-                                                   ; 3
             sta CIA_PRB                                              ; 4
             asl                                                      ; 2
-            and #~ATNA_OUT                                           ; 2
+            and #.lobyte(~ATNA_OUT)                                  ; 2
 dsendcmp:   cpy #$00                                                 ; 2
             iny                                                      ; 2
                                                                      ; = 19

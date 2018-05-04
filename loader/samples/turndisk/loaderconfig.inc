@@ -27,7 +27,7 @@ PLATFORM                           = diskio::platform::COMMODORE_64; currently a
 
 ; these change both host- and drive-side code
 
-PROTOCOL                           = PROTOCOLS::TWO_BITS_ATN; currently available are TWO_BITS_RESEND and TWO_BITS_ATN
+PROTOCOL                           = PROTOCOLS::TWO_BITS_RESEND; currently available are TWO_BITS_RESEND and TWO_BITS_ATN
 
 FILESYSTEM                         = FILESYSTEMS::DIRECTORY_NAME; currently available are DIRECTORY_NAME and TRACK_SECTOR
 
@@ -79,7 +79,7 @@ FILESYSTEM                         = FILESYSTEMS::DIRECTORY_NAME; currently avai
 .define TWO_BITS_RESEND_OPTIMIZE   1 ; C-64 only: for the TWO_BITS_RESEND protocol, quicker loading by using a table,
                                      ; but only 0 or 5..8 sprites are allowed outside IRQ handlers
 
-.define LOAD_UNDER_D000_DFFF       0 ; C-64 only: enable loading (and decompression) to the RAM at $D000-$DFFF,
+.define LOAD_UNDER_D000_DFFF       0 ; C-64 only: enable loading (and decompression) to the RAM at $D000-$DFFF, this slows down loading quite a bit.
                                      ; the IRQ handlers will need to change $01 to enable the I/O-RAM at $D000..$DFFF,
                                      ; so make sure the IRQ handlers restore the $01 status to the value as when they are called.
                                      ; the IRQs must run via $FFFE/F, since the ROM is disabled when accessing the RAM at $D000-$DFFF
@@ -96,7 +96,7 @@ FILESYSTEM                         = FILESYSTEMS::DIRECTORY_NAME; currently avai
 
 .define LOAD_RAW_API               1 ; include the loadraw routine to load files without decompressing
 
-.define LOAD_COMPD_API             1 ; include the loadcompd routine to load and depack compressed files on the fly
+.define LOAD_COMPD_API             0 ; include the loadcompd routine to load and depack compressed files on the fly
                                      ; requires DECOMPRESSOR != DECOMPRESSORS::NONE
 
 .define OPEN_FILE_POLL_BLOCK_API   0 ; include the openfile and pollblock calls for polled loading
@@ -132,7 +132,7 @@ FILESYSTEM                         = FILESYSTEMS::DIRECTORY_NAME; currently avai
                                      ; the raw data may occupy these holes - this does not apply if NO_DECOMPLOAD_OPTIMIZATION != 0;
                                      ; requires DECOMPRESSOR != DECOMPRESSORS::NONE
 
-.define LOAD_VIA_KERNAL_FALLBACK   1 ; loads via the KERNAL API if the loader's installation was not successful
+.define LOAD_VIA_KERNAL_FALLBACK   0 ; loads via the KERNAL API if the loader's installation was not successful
                                      ; (i.e., if the loader is not installed due to an incompatible drive (currently everything that is not
                                      ; a 1541, 1541-C, 1541-II, 1570, 1571, 1571CR, or 1581),
                                      ; or true drive emulation being disabled,
@@ -165,7 +165,7 @@ FILESYSTEM                         = FILESYSTEMS::DIRECTORY_NAME; currently avai
 .define IDLE_BUS_LOCK              0 ; C-64 only: allow for arbitrary $DD00 writes ($00-$FF) when the loader
                                      ; is idle (good for raster routines with LDA #value:STA $D018:STA $DD00, e.g.)
 
-.define NONBLOCKING_API            0 ; include non-blocking calls, so it is possible to run code in the main thread while timer interrupts are used
+.define NONBLOCKING_API            0 ; include non-blocking calls, so it is possible to run code in the main thread while timer NMIs are used
                                      ; to poll and download the blocks - the loader works in interrupt handlers instead of the main thread
 
 .define NONBLOCKING_WITH_KERNAL_ON 1 ; C-64 only: if non-0, will set NMI vectors at both $FFFA/B and $0318/9
@@ -176,7 +176,7 @@ FILESYSTEM                         = FILESYSTEMS::DIRECTORY_NAME; currently avai
 
 ; parameters
 
-LC_SPEED                       =   6 ; Taboo Levelcrush speed, irrelevant if using any other compressor
+LC_SPEED                       =   6 ; Taboo Levelcrush speed, irrelevant if using other compressors
 
 ; non-blocking operation: these intervals are timed for 1541/1541-C/1541-II loading speed, unit is charlines (= 8 scanlines)
 POLLINGINTERVAL_STARTLOAD      = $0a ; spin-up and track seek
@@ -186,7 +186,7 @@ POLLINGINTERVAL_BLOCKSOON      = $02 ; timer interval after one of the bigger in
 POLLINGINTERVAL_REPOLL         = $01 ; maximum polling frequency, block is ready but downloading
                                      ; is postponed because of a running IRQ handler
 
-DECOMPRESSOR                   = DECOMPRESSORS::DOYNAX_LZ; available are NONE, EXOMIZER, PUCRUNCH, DOYNAX_LZ, BYTEBOOZER, LEVELCRUSH
+DECOMPRESSOR                   = DECOMPRESSORS::NONE; available are NONE, EXOMIZER, PUCRUNCH, DOYNAX_LZ, BYTEBOOZER, LEVELCRUSH
 
 
 ; INEFFECTIVE or DISENCOURAGED

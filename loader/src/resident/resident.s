@@ -26,7 +26,7 @@ __NO_LOADER_SYMBOLS_IMPORT = 1
 .importzp GETCHUNK_VARS
 
 .if BYTESTREAM
-.export loadedtb; the test program visualises this
+.export loadedtab; the test program visualises this
 .endif
 
 
@@ -59,9 +59,9 @@ LOAD_FINISHED               = $fe; loading finished successfully
 LOAD_ERROR                  = $ff; file not found or illegal track or sector
 
 .if PLATFORM = diskio::platform::COMMODORE_16
-LOAD_MODULE_WAITREADY_DELAY = $0c
+LOAD_MODULE_WAIT_FOR_BLOCK_READY_DELAY = $0c
 .else
-LOAD_MODULE_WAITREADY_DELAY = $07
+LOAD_MODULE_WAIT_FOR_BLOCK_READY_DELAY = $07
 .endif
 
 
@@ -138,7 +138,6 @@ loadcompd2:
 .else
 loadcompd:
 .endif
-
     .if LOAD_TO_API
             ; there is no DECOMPLOAD_TO_API yet
             clc
@@ -205,6 +204,15 @@ nodeploadf:
 decomploop: jsr getc; skip load address
             jsr getc
 jsrdecomp:  jsr decompress
+
+            ; decompression is finished
+
+            lda getcmemadr + $02
+            bne :+
+            jsr getnewblk; handle special case that decompressing is as quick as loading,
+                         ; this call will fetch the loading finished status and ack loading
+:
+            ; endaddrlo/hi is one past last loaded data byte
         .if GETC_API
             lda getcmemfin + $01
             cmp endaddrlo
@@ -219,14 +227,14 @@ jsrdecomp:  jsr decompress
             bcc decomploop; decompress all compressed sub-files that may be inside the compressed file
     .else
             jsr decompress
-    .endif; CHAINED_COMPD_FILES
 
             ; decompression is finished
 
             lda getcmemadr + $02
             bne compdeof
             jsr getnewblk; handle special case that decompressing is as quick as loading,
-                         ; this call will fetch the loading finished flag and ack loading
+                         ; this call will fetch the loading finished status and ack loading
+    .endif; CHAINED_COMPD_FILES
 
             ; loading and decompression is done
 compdeof:   lda #diskio::status::OK
@@ -252,7 +260,7 @@ stackpntr:  ldx #$00
             txs
 dontthrow:
     .if DECOMPRESSOR = DECOMPRESSORS::PUCRUNCH
-            bcs :+
+            bcs :+; skip on error
             ; return the execution address in x/y
             ldx lo + $01
             ldy hi + $01
@@ -333,7 +341,7 @@ pagain:     sta PACCUBUF
             ACK_TIMER_IRQ_P
             LEAVE_POLL_HANDLER
 
-pollirq:    BRANCH_IF_NOT_READY pagain
+pollirq:    BRANCH_IF_BLOCK_NOT_READY pagain
             sta PACCUBUF; no pha/pla because hal-c64 needs to retrieve the flags pushed
                         ; on the stack to determine if an irq has been interrupted
 pblkready:  BRANCH_IF_IRQS_PENDING ptoirqspnd
@@ -347,7 +355,7 @@ pseiclisw3: cli
             pha
             tya
             pha
-            jsr pollblock
+            jsr _pollblock; avoid going via jump table
             jcs perror
             cmp #diskio::status::CHANGING_TRACK
             beq ptrkchan
@@ -432,13 +440,14 @@ openfile:
             sty blockindex + $01
             sty LASTBLKIDX
         .if GETCHUNK_API
-            sty LASTPC + $01; entry switch; return errors to the caller, no exceptions
+            sty LASTPC + $01; entry switch; return errors to the caller, no exceptions thrown
             sty CHUNKSWTCH; switch the GETCHUNK_API routines on
             sty CHUNKENDLO
             sty CHUNKENDHI
         .endif
             dey
             sty YPNTRBUF
+
             lda #.lobyte(getcload)
             ldy #.hibyte(getcload)
             jsr puttoloadb
@@ -448,13 +457,13 @@ openfile:
 .if MEM_DECOMP_TO_API
     .if DECOMPRESSOR = DECOMPRESSORS::PUCRUNCH
             lda #OPC_BIT_ZP
-            sta storedadrl
-            sta storedadrh
     .else
             lda #OPC_STA_ZP
-            sta storedadrl
-            sta storedadrh
     .endif
+    .if DECOMPRESSOR <> DECOMPRESSORS::DOYNAX_LZ; destination lo-byte cannot be overridden
+            sta storedadrl
+    .endif
+            sta storedadrh
 .endif
 
 .if LOAD_UNDER_D000_DFFF & (PLATFORM <> diskio::platform::COMMODORE_16)
@@ -467,7 +476,7 @@ openfile:
 
 .if LOAD_VIA_KERNAL_FALLBACK
 
-USE_WAITREADY_KERNAL = 1
+USE_WAIT_FOR_BLOCK_READY_KERNAL = 1
 
     .if !GOT_MEMCONFIG
             GET_MEMCONFIG
@@ -509,7 +518,7 @@ ldrnotinst: ENABLE_KERNAL_SERIAL_ROUTINES
 
             stx namestrpos + $00
 
-        .if USE_WAITREADY_KERNAL
+        .if USE_WAIT_FOR_BLOCK_READY_KERNAL
             ENABLE_WAITBUSY_KERNAL
         .endif
 
@@ -582,7 +591,7 @@ kernopenok:
             lda kernaloff + $01
             SET_MEMCONFIG
     .endif    
-            jmp fopenok
+            jmp retrnokclc
 
 nofallback:
 
@@ -594,8 +603,8 @@ nofallback:
 .if BYTESTREAM | END_ADDRESS_API
             lda #$00
     .if BYTESTREAM
-            ldy #loadedtbend - loadedtb - 1
-:           sta loadedtb,y; clear the bitfield denoting the blocks already loaded
+            ldy #loadedtabe - loadedtab - 1
+:           sta loadedtab,y; clear the bitfield denoting the blocks already loaded
             dey
             bpl :-
     .endif
@@ -607,7 +616,7 @@ nofallback:
 .endif
 
 .if !LOAD_ONCE
-            WAITREADY
+            WAIT_FOR_BLOCK_READY
 
     .if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
             ; x still contains the lobyte/track function parameter
@@ -621,10 +630,10 @@ nofallback:
         .endif
             lda #MODULES::LOADFILE
             jsr sendbyte
-            ldx #LOAD_MODULE_WAITREADY_DELAY; some delay until the drive side is ready
+            ldx #LOAD_MODULE_WAIT_FOR_BLOCK_READY_DELAY; some delay until the drive side is ready
 :           dex
             bne :-
-            WAITREADY
+            WAIT_FOR_BLOCK_READY
     .endif
 
     .if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
@@ -665,10 +674,10 @@ sendname:   lda (BLOCKDESTLO),y
 
     .if LOAD_VIA_KERNAL_FALLBACK
             ; check whether the loader is still installed
-            ldx #LOAD_MODULE_WAITREADY_DELAY; some delay until the drive side is ready
+            ldx #LOAD_MODULE_WAIT_FOR_BLOCK_READY_DELAY; some delay until the drive side is ready
 :           dex
             bne :-
-            BRANCH_IF_DATA_IN_CLEAR fopenok
+            BRANCH_IF_DATA_IN_CLEAR retrnokclc
 
             ; if not, try again with kernal routines
             SET_IO_KERNAL
@@ -679,7 +688,7 @@ sendname:   lda (BLOCKDESTLO),y
 
 .endif; !LOAD_ONCE
 
-fopenok:    clc
+retrnokclc: clc
 returnok:   lda #diskio::status::OK; $00
             tax; file descriptor, always 0 since this loader
                ; only supports one open file at a time
@@ -757,7 +766,7 @@ getblnofbk:
 
 .if OPEN_FILE_POLL_BLOCK_API | NONBLOCKING_API
             jsr getblock
-            bcs evalerr
+            bcs err2status
             lda #diskio::status::CHANGING_TRACK
            ;clc
             BRANCH_IF_CHANGING_TRACK dorts
@@ -768,10 +777,12 @@ getblnofbk:
             bcc returnok
 .endif; !(OPEN_FILE_POLL_BLOCK_API | NONBLOCKING_API)
 
-            ; accu is DEVICE_NOT_PRESENT ($00 or $01),
+			; translate getblock error code to diskio::status,
+			; always returns with carry set to satisfy pollblock return semantics,
+            ; accu argument is DEVICE_NOT_PRESENT ($00 or $01),
             ; LOAD_FINISHED ($fe, file loaded successfully),
-            ; or LOAD_ERROR ($ff, file not found or illegal t or s) here
-evalerr:
+            ; or LOAD_ERROR ($ff, file not found or illegal t or s)
+err2status:
             IDLE
 
             cmp #LOAD_FINISHED; $fe
@@ -795,7 +806,7 @@ pollfail:   sec
 
 getblock:   lda #DEVICE_NOT_PRESENT
             PREPARE_SEND_BLOCK_SIGNAL
-            WAITREADY
+            WAIT_FOR_BLOCK_READY
             bmi pollfail; branch if device not present
 
             BEGIN_SEND_BLOCK_SIGNAL
@@ -856,7 +867,7 @@ storeladrh: sta loadaddrhi; is changed to lda on load_to
             bcs fin1stblk; jmp
 
 not1stblk:  cmp #SPECIAL_BLOCK_NOS; check for special block numbers: LOAD_FINISHED ($fe, loading finished successfully), LOAD_ERROR ($ff)
-.if LOAD_PROGRESS_API | END_ADDRESS
+.if LOAD_PROGRESS_API | END_ADDRESS | LOAD_UNDER_D000_DFFF
             jcs polldone
 .else
             bcs polldone
@@ -955,8 +966,8 @@ gotblock:
 .if BYTESTREAM
             lda BLOCKINDEX
             jsr loadedsub
-            ora loadedtb,y
-            sta loadedtb,y; mark this block as loaded
+            ora loadedtab,y
+            sta loadedtab,y; mark this block as loaded
 .endif
 
 .if END_ADDRESS
@@ -995,7 +1006,7 @@ sendbyte:   SENDBYTE
 
 .if (!GETC_API) & (GETCHUNK_API | LOAD_COMPD_API) & CHAINED_COMPD_FILES
 getc:
-    .if DECOMPRESSOR = DECOMPRESSORS::PUCRUNCH
+    .if (DECOMPRESSOR = DECOMPRESSORS::PUCRUNCH) | (DECOMPRESSOR = DECOMPRESSORS::DOYNAX_LZ)
             jmp (toloadbt + $01)
     .else
             jmp (toloadb0 + $01)
@@ -1086,8 +1097,8 @@ kernalgbyt: jsr READST; get KERNAL status byte
 @0:
     .endif
     
-    .if USE_WAITREADY_KERNAL
-            WAITREADY_KERNAL
+    .if USE_WAIT_FOR_BLOCK_READY_KERNAL
+            WAIT_FOR_BLOCK_READY_KERNAL
     .endif
             jsr CHRIN
             clc
@@ -1244,7 +1255,7 @@ getdbyte:   lda a:$00,y
     .endif
             inc YPNTRBUF
             beq blockindex; branch to process next stream block
-            BRANCH_IF_READY getnewblk; download block as soon as possible
+            BRANCH_IF_BLOCK_READY getnewblk; download block as soon as possible
 
     .if GETC_API
             clc
@@ -1270,18 +1281,18 @@ firstblock: ; set stream buffer pointers
             sta getdbyte + $01
             lda storebyte + $02
             sta getdbyte + $02
-            inc blockindex + $01; first block has been downloaded,
+            inc blockindex + $01; $00 -> $01, first block has been downloaded,
                                 ; set flag to skip waiting for the next block download
 
     .if LOAD_UNDER_D000_DFFF & (PLATFORM <> diskio::platform::COMMODORE_16)
             ENABLE_ALL_RAM
     .endif
-            bne dogetcload; jmp: return first file byte and maybe download more blocks before that
+            bne dogetcload; jmp: return first file byte and maybe download another block before that
 
 blockindex: ldy #$00; block index and flag to skip waiting for the next block to download,
                     ; the value is increased for every loaded block and set to $ff after loading is finished
             stx xbuf + $02
-            bne chkloaded
+            bne chkloaded; do not wait for block here if first block has been loaded already
 
             ; first block
             SKIPBYTE
@@ -1299,7 +1310,7 @@ chkloaded:  pha; current stream byte
             iny; block index
             beq xbuf - $01; $ff = last block had been loaded already, clear carry: ok
             jsr loadedsub
-            and loadedtb,y
+            and loadedtab,y
             beq waitforblk; branch if the next block in the stream is not yet loaded
 
             ; advance stream pointer
@@ -1351,7 +1362,7 @@ xbuf:       pla; current stream byte
             ; the status byte has been received, end loading
 gotstatus:  pha; DEVICE_NOT_PRESENT ($00), LOAD_FINISHED ($fe), or LOAD_ERROR ($ff, file not found or illegal t or s)
 
-            ; switch to memory-read only getc routine
+            ; switch to memory-read getc routine
             clc
             lda YPNTRBUF
             adc getdbyte + $01
@@ -1373,11 +1384,8 @@ gotstatus:  pha; DEVICE_NOT_PRESENT ($00), LOAD_FINISHED ($fe), or LOAD_ERROR ($
             sta blockindex + $01; mark load finished
 
             pla; DEVICE_NOT_PRESENT ($00), LOAD_FINISHED ($fe), or LOAD_ERROR ($ff, file not found or illegal t or s)
-            jsr evalerr ; if accu is $00 (device not present), or $ff (file not found or illegal t or s),
-                        ; return with an error, otherwise continue
-            bcc xbuf + $00
-            ; error or EOF
-            tax; cmp #diskio::status::OK
+            jsr err2status
+           ;tax; cmp #diskio::status::OK
     .if GETC_API
            ;sec
             bne :+
@@ -1417,8 +1425,8 @@ loadedsub:  tay
             rts
 
 loadedor:   .byte $80, $40, $20, $10, $08, $04, $02, $01; or-values for the bitfield
-loadedtb:   .res 32, 0; bitfield for already-loaded blocks, 256 bits for 64 kB minus 514 (256*2 + 2) bytes of memory
-loadedtbend:
+loadedtab:  .res 32, 0; bitfield for already-loaded blocks, 256 bits for 64 kB minus 514 (256*2 + 2) bytes of memory
+loadedtabe:
 .endif; BYTESTREAM
 
 .if MEM_DECOMP_API
@@ -1448,7 +1456,7 @@ memdecomp:
     .endif
 
     .if CHAINED_COMPD_FILES
-            jmp :+
+            jmp domemdecomp
 
 
             ; --- decompress a chained compressed file from memory ---
@@ -1462,30 +1470,29 @@ cmemdecomp2:
 .else
 cmemdecomp:
 .endif
-
         .if GETC_API
             lda #$00
             sta endaddrhi
         .endif
-            jsr getcmem; skip load address,
+            jsr getcmem; skip subfile load address,
             jsr getcmem; the state of the c-flag is preserved
-:
+
+domemdecomp:
     .endif; CHAINED_COMPD_FILES
 
     .if MEM_DECOMP_TO_API
         .if DECOMPRESSOR = DECOMPRESSORS::PUCRUNCH
             lda #OPC_BIT_ZP
-            bcc :+
-            lda #OPC_LDA_ZP
-:           sta storedadrl
-            sta storedadrh
         .else
             lda #OPC_STA_ZP
+        .endif
             bcc :+
             lda #OPC_LDA_ZP
-:           sta storedadrl
-            sta storedadrh
+:           
+        .if DECOMPRESSOR <> DECOMPRESSORS::DOYNAX_LZ; destination lo-byte cannot be overridden
+            sta storedadrl
         .endif
+            sta storedadrh
     .endif
 
     .if GETCHUNK_API
@@ -1524,303 +1531,8 @@ uninstall:
 .endif; UNINSTALL_API
 
 .if HAS_DECOMPRESSOR
-
-    .if DECOMPRESSOR = DECOMPRESSORS::PUCRUNCH
-        chunkdestlo = OUTPOS + $00
-        chunkdesthi = OUTPOS + $01
-    .else
-        chunkdestlo = decdestlo
-        chunkdesthi = decdesthi
-    .endif
-
-    .macro CHUNKENTRY
-        .if GETCHUNK_API
-            lda CHUNKSWTCH
-            bne begindecomp
-            tsx
-            stx LASTSP
-            lda LASTPC + $01
-            beq begindecomp
-            lda CHUNKENDLO
-            cmp chunkdestlo
-            lda CHUNKENDHI
-            sbc chunkdesthi
-            jcc chunkret; branch if the desired chunk is already available
-            CHUNKRESTORE
-            jmp (LASTPC); this causes an assertion warning with ld65/.o65 for unknown reasons
-begindecomp:
-            ; throw exception on stream error
-            sec
-            .if LOAD_COMPD_API
-            rol throwswtch + $01
-            .else
-            rol LASTPC + $01
-            .endif
-        .endif
-    .endmacro
-
-    .macro CHUNKSETUP
-        .if GETCHUNK_API
-            lda CHUNKSWTCH
-            bne nochunksetup
-            clc
-            lda chunkdestlo
-            sta CHUNKBEGLO
-            adc CHUNKENDLO
-            sta CHUNKENDLO
-            lda chunkdesthi
-            sta CHUNKBEGHI
-            adc CHUNKENDHI
-            sta CHUNKENDHI
-nochunksetup:
-        .endif
-    .endmacro
-
-    .macro CHUNKCHECK
-        .if GETCHUNK_API
-            .local notcomplet
-
-            lda CHUNKENDLO
-            cmp chunkdestlo
-            lda CHUNKENDHI
-            sbc chunkdesthi
-            .if DECOMPRESSOR = DECOMPRESSORS::PUCRUNCH
-            lda #$00; the z-flag needs to be set
-            .endif
-            bcs notcomplet; branch if chunk not complete yet
-            jsr chunkout; return chunk
-notcomplet:
-        .endif
-    .endmacro
-
-    .macro CHUNKEOF
-        .if GETCHUNK_API
-            jmp chunkeof
-        .endif
-    .endmacro
-
-    .macro CHUNKSUB
-        .if GETCHUNK_API
-chunkout:   CHUNKBACKUP
-            clc
-            pla
-            adc #$01
-            sta LASTPC + $00
-            pla
-            adc #$00
-            sta LASTPC + $01
-            ldx LASTSP
-            txs
-chunkret:   sec
-            lda CHUNKENDLO
-            sbc CHUNKBEGLO
-            sta param4
-            lda CHUNKENDHI
-            sbc CHUNKBEGHI
-            sta param5
-            ldx CHUNKBEGLO
-            ldy CHUNKBEGHI
-            lda CHUNKENDLO
-            sta CHUNKBEGLO
-            lda CHUNKENDHI
-            sta CHUNKBEGHI
-            lda #diskio::status::OK
-            clc
-            rts
-
-            ; eof in streamed file, return to caller if end of stream, too,
-            ; otherwise go on if compressed files can be chained
-chunkeof:   lda CHUNKSWTCH
-            bne chunkok
-
-            .if CHAINED_COMPD_FILES
-
-                .if LOAD_VIA_KERNAL_FALLBACK
-            .local closefile
-            .local nofallback
-
-            ENABLE_KERNAL_SERIAL_ROUTINES
-
-            BRANCH_IF_INSTALLED nofallback
-            jsr getc
-            jsr getc
-
-                    .if (!LOAD_UNDER_D000_DFFF) & (PLATFORM <> diskio::platform::COMMODORE_16)
-            ENABLE_IO_SPACE_Y
-                    .else
-            ENABLE_ALL_RAM_Y
-                    .endif
-
-            bcc skiploadad
-            cmp #diskio::status::EOF
-            beq chunkend
-
-            ldy kernaloff + $01
-            SET_MEMCONFIG_Y
-
-            sec
-            rts
-
-nofallback:
-                    .if (!LOAD_UNDER_D000_DFFF) & (PLATFORM <> diskio::platform::COMMODORE_16)
-            ENABLE_IO_SPACE
-                    .else
-            ENABLE_ALL_RAM
-                    .endif
-                .endif; LOAD_VIA_KERNAL_FALLBACK
-
-            .local skiploadad
-
-                .if GETC_API
-            lda getcmemfin + $01
-            cmp endaddrlo
-            lda getcmemfin + $02
-            sbc endaddrhi
-                .else; !GETC_API
-            lda getcmemadr + $01
-            cmp endaddrlo
-            lda getcmemadr + $02
-            sbc endaddrhi
-                .endif; !GET_API
-            bcs chunkend
-
-            ; go on with the next compressed sub-file
-            jsr getc; skip load
-            jsr getc; address
-
-skiploadad: lda #$00
-            sta CHUNKENDLO
-            sta CHUNKENDHI
-            sta LASTPC + $01
-            beq chunkchain; jmp
-
-            .endif; CHAINED_COMPD_FILES
-
-chunkend:   lda #.lobyte(dochunkeof)
-            sta LASTPC + $00
-            lda #.hibyte(dochunkeof)
-            sta LASTPC + $01
-
-chunkchain: sec
-            lda chunkdestlo
-            sbc CHUNKBEGLO
-            sta param4
-            lda chunkdesthi
-            sbc CHUNKBEGHI
-            sta param5
-            ldx CHUNKBEGLO
-            ldy CHUNKBEGHI
-chunkok:    lda #diskio::status::OK
-            clc
-            rts
-
-dochunkeof:
-            .if LOAD_VIA_KERNAL_FALLBACK
-            .local closefile
-            .local installed
-
-            ENABLE_KERNAL_SERIAL_ROUTINES
-
-            BRANCH_IF_INSTALLED installed
-closefile:  jsr getckernal
-            bcc closefile
-
-            SKIPWORD
-installed:  lda #diskio::status::EOF
-
-            ldy kernaloff + $01
-            SET_MEMCONFIG_Y
-
-    .if DECOMPRESSOR = DECOMPRESSORS::PUCRUNCH    
-            ldx hi + $01
-            ldy lo + $01
-    .endif
-            sec
-            rts
-
-            .else; !LOAD_VIA_KERNAL_FALLBACK
-
-                .if LOAD_UNDER_D000_DFFF & (PLATFORM <> diskio::platform::COMMODORE_16)
-            ldy memconfig + $01
-            SET_MEMCONFIG_Y
-                .elseif LOAD_VIA_KERNAL_FALLBACK & (PLATFORM <> diskio::platform::COMMODORE_16)
-            ldy kernaloff + $01
-            SET_MEMCONFIG_Y
-                .endif
-
-            lda #diskio::status::EOF
-
-    .if DECOMPRESSOR = DECOMPRESSORS::PUCRUNCH    
-            ldx hi + $01
-            ldy lo + $01
-    .endif
-            sec
-            rts
-
-            .endif; !LOAD_VIA_KERNAL_FALLBACK
-
-        .endif; GETCHUNK_API
-    .endmacro; CHUNKSUB
-
-    .if DECOMPRESSOR = DECOMPRESSORS::PUCRUNCH
-
-        .macro CHUNKBACKUP
-        .endmacro
-
-        .macro CHUNKRESTORE
-            lda #$00; the z-flag needs to be set
-        .endmacro
-
-        .include "decompress/pudecomp.s"
-
-    .elseif DECOMPRESSOR = DECOMPRESSORS::BYTEBOOZER
-
-        .macro CHUNKBACKUP
-            sty LASTYREG
-        .endmacro
-
-        .macro CHUNKRESTORE
-            ldy LASTYREG
-        .endmacro
-
-        .include "decompress/bbdecomp.s"
-
-    .elseif DECOMPRESSOR = DECOMPRESSORS::LEVELCRUSH
-
-        .macro CHUNKBACKUP
-            stx LASTXREG
-        .endmacro
-
-        .macro CHUNKRESTORE
-            ldx LASTXREG
-        .endmacro
-
-        .include "decompress/lcdecomp.s"
-
-    .elseif DECOMPRESSOR = DECOMPRESSORS::EXOMIZER
-
-        .macro CHUNKBACKUP
-        .endmacro
-
-        .macro CHUNKRESTORE
-            ldx #$00
-            ldy #$00
-        .endmacro
-
-        FORWARD_DECRUNCHING = 1
-
-        get_crunched_byte = getcmem
-
-        .include "decompress/exodecomp.s"
-
-        decompress = decrunch
-
-    .else
-        .error "***** Error: The selected decompressor option is not yet implemented. *****"
-    .endif
-
-        CHUNKSUB
-.endif
+			.include "resident/decompress.s"
+.endif; HAS_DECOMPRESSOR
 
 .if BYTESTREAM | HAS_DECOMPRESSOR
 setgetcmem: sta getcmemadr + $02

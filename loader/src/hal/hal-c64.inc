@@ -19,7 +19,7 @@ _HAL_C64_INC_ = 1
             .local ntsc
 
             lda CIA1_CRA
-            and #~TOD_FREQ_MASK
+            and #.lobyte(~TOD_FREQ_MASK)
             ldx PAL_NTSC
             beq ntsc
             ora #TOD_FREQ_50HZ
@@ -117,7 +117,7 @@ ntsc:       sta CIA1_CRA
     CLOCK_ATN_LO           = CLOCK | CIA_SERIAL_ATN_OUT_OUTPUT; 2nd and 4th bit pairs; $3f
 
     .macro ENABLE_WAITBUSY_KERNAL
-            lda #~CIA_SERIAL_CLK_OUT_OUTPUT
+            lda #.lobyte(~CIA_SERIAL_CLK_OUT_OUTPUT)
             php
             sei
             and CIA2_PRA
@@ -128,7 +128,7 @@ ntsc:       sta CIA1_CRA
     .macro INIT_CLEAR_DATA_OUT_CLEAR_CLK_OUT_CLEAR_ATN_OUT
             ; this is executed during install and openfile if IDLE_BUS_LOCK != 0
             ; hence it accesses the port register rather than the data direction register
-            lda #~(SERIAL_DATA_OUT | SERIAL_CLK_OUT | SERIAL_ATN_OUT | RS232_TXD)
+            lda #.lobyte(~(SERIAL_DATA_OUT | SERIAL_CLK_OUT | SERIAL_ATN_OUT | RS232_TXD))
             and CIA2_PRA
             sta CIA2_PRA
     .endmacro
@@ -189,7 +189,7 @@ ntsc:       sta CIA1_CRA
 sendbyte:   lsr
             pha
             lda CIA2_DDRA
-            and #~CIA_SERIAL_DATA_OUT_OUTPUT
+            and #.lobyte(~CIA_SERIAL_DATA_OUT_OUTPUT)
             bcs bitset
             ora #CIA_SERIAL_DATA_OUT_OUTPUT
 bitset:     eor #CIA_SERIAL_CLK_OUT_OUTPUT

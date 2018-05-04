@@ -71,7 +71,7 @@ USE_GENERIC_DRIVE = 0
 .ifdef DYNLINK_EXPORT
     .macro DYNLINKEXPORT function, label
         .byte function
-        .word -1; don't import now, only regard the function as available
+        .word .lobyte(-1); don't import now, only regard the function as available
     .endmacro
 
     .segment "JUMPTABLE"; this segment is required by the o65 built-in linker config file

@@ -46,13 +46,13 @@ _LOADER_INC_ = 1
                     ; than lots of small single files and also removes sector allocation overhead - not implemented yet
 .endenum
 
-.enum DECOMPRESSORS ; the available decompression routines - in this version, EXOSTREAM and GPACKER are not implemented yet
+.enum DECOMPRESSORS ; the available decompression routines
 
-    EXOMIZER        ; Magnus Lind's Exomizer - no fast decompression, but nearly optimal compression ratio (rle+lz+huffman)
-    PUCRUNCH        ; Pasi Ojala's Pucrunch - not so fast decompression but very good compression ratio (rle+lz+huffman)
-    BYTEBOOZER      ; HCL/Booze Design's ByteBoozer - pretty fast decompression and good compression ratio (lz, a little better than Levelcrush)
-    LEVELCRUSH      ; Taboo Levelcrush - pretty fast decompression and good compression ratio (lz)
-   ;GPACKER         ; Graham/Oxyron's G-Packer - very fast decompression and okay compression ratio (rle) - not implemented yet
+    EXOMIZER        ; Magnus Lind's Exomizer
+    PUCRUNCH        ; Pasi Ojala's Pucrunch
+    DOYNAX_LZ       ; Doynax LZ
+    BYTEBOOZER      ; HCL/Booze Design's ByteBoozer
+    LEVELCRUSH      ; Taboo Levelcrush
 
     NONE            ; no decompressor used
 
@@ -114,7 +114,7 @@ diskioreq:
             ; and allow double clock
             lda TED_CHARGEN_ADDR
             pha
-            and #~FORCE_SINGLE_CLOCK
+            and #.lobyte(~FORCE_SINGLE_CLOCK)
             sta TED_CHARGEN_ADDR
 
         .if NONBLOCKING_API
@@ -140,7 +140,7 @@ nopoll:
             lsr
             lsr
             lda TED_CHARGEN_ADDR
-            and #~FORCE_SINGLE_CLOCK
+            and #.lobyte(~FORCE_SINGLE_CLOCK)
             bcc fast
             ora #FORCE_SINGLE_CLOCK
 fast:       sta TED_CHARGEN_ADDR
@@ -393,16 +393,29 @@ IMPORT openfile
     .endif; LOAD_TO_API
 .endif;  LOAD_ONCE
 
-; Check if a block is ready to download
-; in:  nothing
-; out: v - set if a block is ready to download, cleared otherwise
+; Branch if a block is ready to download
 .if PLATFORM = diskio::platform::COMMODORE_16
-.macro BLOCKREADY
+.macro BRANCH_IF_BLOCK_READY to
             bit $01; IO_PORT
+            bvs to
 .endmacro
 .else
-.macro BLOCKREADY
+.macro BRANCH_IF_BLOCK_READY
             bit $dd00; CIA2_PRA
+            bvs to
+.endmacro
+.endif
+
+; Branch if a block is not ready to download
+.if PLATFORM = diskio::platform::COMMODORE_16
+.macro BRANCH_IF_BLOCK_NOT_READY to
+            bit $01; IO_PORT
+            bvc to
+.endmacro
+.else
+.macro BRANCH_IF_BLOCK_NOT_READY
+            bit $dd00; CIA2_PRA
+            bvc to
 .endmacro
 .endif
 
@@ -640,7 +653,7 @@ singleclk:                                      ; = 14
 
             pla
             bne singleclk
-            lda #~FORCE_SINGLE_CLOCK
+            lda #.lobyte(~FORCE_SINGLE_CLOCK)
             php
             sei                                 ; 2
             and TED_CHARGEN_ADDR                ; 4
@@ -668,7 +681,7 @@ sendbyte:   lsr
             lda IO_PORT
             ora #IO_PORT_SERIAL_DATA_OUT
             bcs bitset
-            and #~IO_PORT_SERIAL_DATA_OUT
+            and #.lobyte(~IO_PORT_SERIAL_DATA_OUT)
 bitset:     eor #IO_PORT_SERIAL_CLK_OUT
             sta IO_PORT
             pla
@@ -744,7 +757,7 @@ bitset:     eor #IO_PORT_SERIAL_CLK_OUT
 sendbyte:   lsr
             pha
             lda CIA2_DDRA
-            and #~CIA_SERIAL_DATA_OUT_OUTPUT
+            and #.lobyte(~CIA_SERIAL_DATA_OUT_OUTPUT)
             bcs bitset
             ora #CIA_SERIAL_DATA_OUT_OUTPUT
 bitset:     eor #CIA_SERIAL_CLK_OUT_OUTPUT

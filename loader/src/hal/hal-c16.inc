@@ -100,7 +100,7 @@ CLOCK_ATN_LO           = CLOCK | (0 & IO_PORT_SERIAL_ATN_OUT); 2nd and 4th bit p
 
 
 .macro ENABLE_WAITBUSY_KERNAL
-            lda #~IO_PORT_SERIAL_CLK_OUT
+            lda #.lobyte(~IO_PORT_SERIAL_CLK_OUT)
             and IO_PORT
             sta IO_PORT
 .endmacro
@@ -178,7 +178,7 @@ singleclk:                       ; = 14
 
             pla
             bne singleclk
-            lda #~FORCE_SINGLE_CLOCK
+            lda #.lobyte(~FORCE_SINGLE_CLOCK)
             php
             sei                  ; 2
             and TED_CHARGEN_ADDR ; 4
@@ -206,7 +206,7 @@ sendbyte:   lsr
             lda IO_PORT
             ora #IO_PORT_SERIAL_DATA_OUT
             bcs bitset
-            and #~IO_PORT_SERIAL_DATA_OUT
+            and #.lobyte(~IO_PORT_SERIAL_DATA_OUT)
 bitset:     eor #IO_PORT_SERIAL_CLK_OUT
             sta IO_PORT
             pla
@@ -461,7 +461,7 @@ done:
 .endmacro
 
 .macro DISABLE_TIMER_IRQ
-            lda #~COUNTER_1_IRQ
+            lda #.lobyte(~COUNTER_1_IRQ)
             and TED_IMR
             sta TED_IMR
 .endmacro
