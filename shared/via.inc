@@ -3,7 +3,11 @@
 .ifndef _VIA_INC_
 _VIA_INC_ = 1
 
+.ifdef CX500
+VIA1_BASE                         = $3800
+.else
 VIA1_BASE                         = $1800
+.endif
 
  VIA_PIO0                         = %00000001
  VIA_PIO1                         = %00000010
@@ -188,7 +192,11 @@ VIA1_ORA_NO_HANDSHAKE             = VIA1_PRA_NO_HANDSHAKE; Output Register A wit
 VIA1_IRA_NO_HANDSHAKE             = VIA1_PRA_NO_HANDSHAKE; Input Register A without Handshake
 
 
+.ifdef CX500
+VIA2_BASE                         = $5c00
+.else
 VIA2_BASE                         = $1c00
+.endif
 
 VIA2_PRB                          = VIA2_BASE + $00; Port register B
 VIA2_ORB                          = VIA2_PRB; Output Register B
@@ -352,7 +360,7 @@ VIA2_ORA_NO_HANDSHAKE             = VIA2_PRA_NO_HANDSHAKE; Output Register A wit
 VIA2_IRA_NO_HANDSHAKE             = VIA2_PRA_NO_HANDSHAKE; Input Register A without Handshake
 
 
-; the CIA in the CMD FD
+; the VIA in the CMD FD
 
 VIA_BASE                          = $4000
 

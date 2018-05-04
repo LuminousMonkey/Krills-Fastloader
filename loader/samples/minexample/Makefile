@@ -1,16 +1,16 @@
 
 ifeq ($(PLATFORM),)
-_PLATFORM_     = c64
+_PLATFORM_   = c64
 else ifeq ($(PLATFORM),c116)
-_PLATFORM_     = c16
+_PLATFORM_   = c16
 else ifeq ($(PLATFORM),plus4)
-_PLATFORM_     = c16
+_PLATFORM_   = c16
 else
-_PLATFORM_     = $(PLATFORM)
+_PLATFORM_   = $(PLATFORM)
 endif
 
 ifeq ($(NO_VICE),)
-NO_VICE        = 0
+NO_VICE      = 0
 endif
 
 
@@ -21,58 +21,58 @@ endif
 endif
 
 
-ARCH           = $(shell uname | tr "[a-z]" "[A-Z]" | tr -c -d "[A-Z]")
+ARCH         = $(shell uname | tr "[a-z]" "[A-Z]" | tr -c -d "[A-Z]")
 
 ifneq ($(findstring CYGWINNT,$(ARCH)),)
     ifeq (CYGWINNT,$(ARCH))
-ARCH           = WIN32
+ARCH         = WIN32
     else
-ARCH           = WIN64
+ARCH         = WIN64
     endif    
 endif
 ifneq ($(findstring DARWIN,$(ARCH)),)
-ARCH           = MACOSX
+ARCH         = MACOSX
 endif
 
 
 ifeq ($(_PLATFORM_),c16)
     ifneq ($(NO_VICE),0)
         ifneq ($(findstring WIN,$(ARCH)),)
-USE_PLUS4EMU   = 0
-USE_YAPE       = 1
+USE_PLUS4EMU = 0
+USE_YAPE     = 1
         else
-USE_PLUS4EMU   = 1
-USE_YAPE       = 0
+USE_PLUS4EMU = 1
+USE_YAPE     = 0
         endif
     else
-USE_PLUS4EMU   = 0
-USE_YAPE       = 0
+USE_PLUS4EMU = 0
+USE_YAPE     = 0
     endif
 else
-USE_PLUS4EMU   = 0
-USE_YAPE       = 0
+USE_PLUS4EMU = 0
+USE_YAPE     = 0
 endif
 
 
 ifeq ($(_PLATFORM_),c16)
     ifeq ($(ARCH),MACOSX)
     # MacOSX, these programs must be installed as applications
-VICE           = /Applications/VICE/xplus4.app/Contents/MacOS/xplus4
-PLUS4EMU       = /Applications/plus4emu.app/Contents/MacOS/plus4emu
+VICE         = /Applications/VICE/xplus4.app/Contents/MacOS/xplus4
+PLUS4EMU     = /Applications/plus4emu.app/Contents/MacOS/plus4emu
     else    
-VICE           = xplus4
-PLUS4EMU       = plus4emu
+VICE         = xplus4
+PLUS4EMU     = plus4emu
         ifeq ($(ARCH),WIN64)
-YAPE           = YapeWin64
+YAPE         = YapeWin64
         else
-YAPE           = Yape
+YAPE         = Yape
         endif
     endif
 else ifeq ($(ARCH),MACOSX)
     # MacOSX, these programs must be installed as applications
-VICE           = /Applications/VICE/x64.app/Contents/MacOS/x64
+VICE         = /Applications/VICE/x64.app/Contents/MacOS/x64
 else
-VICE           = x64
+VICE         = x64
 endif
 
 ifneq ($(USE_PLUS4EMU),0)
@@ -95,7 +95,7 @@ RM           = rm -f
 ifeq ($(ARCH),MACOSX)
 RMDIR        = rmdir # XXX TODO xargs to remove .DS_Store
 else
-RMDIR        = rmdir --ignore-fail-on-non-empty
+RMDIR        = rmdir
 endif
 CAT          = cat
 
@@ -105,7 +105,7 @@ CAT          = cat
 
 
 BUILDDIR     = ../../build
-INTERMDIR    = ../../build/intermediate
+INTERMDIR    = ../../build/interm
 LOADER_SRC   = ../../src
 LOADER       = $(BUILDDIR)/loader-$(_PLATFORM_).a
 
@@ -135,7 +135,7 @@ tellarch:
 
 loader: $(LOADER)
 
-$(LOADER):
+$(LOADER): $(LOADERCFG)
 	make -C $(LOADER_SRC) EXTCONFIGPATH=../samples/minexample
 
 

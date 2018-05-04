@@ -48,6 +48,7 @@ PNTR                                   = $d3
 LDTB1                                  = $d9
 
 COLOR                                  = $0286
+PAL_NTSC                               = $02a6; 0: NTSC
 
 NMINV                                  = $0318
 IBASIN                                 = $0324; CHRIN vector

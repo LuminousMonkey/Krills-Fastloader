@@ -112,11 +112,11 @@ dcodinit:
             bmi :-
 
            ;ldx #IRQ_CLEAR_FLAGS | IRQ_ALL_FLAGS; $7f
-            stx VIA1_IER; no irqs from via 1
-            stx VIA2_IER; no irqs from via 2
+            stx VIA1_IER; no IRQs from VIA 1
+            stx VIA2_IER; no IRQs from VIA 2
 
             lda #IRQ_SET_FLAGS | IRQ_TIMER_1
-            sta VIA2_IER; timer 1 irqs from via 2
+            sta VIA2_IER; timer 1 IRQs from VIA 2
 
             lda #JOBCODE_EXECUTE
             sta JOBCODE0300; execute watchdog handler at $0300 on watchdog time-out
@@ -186,7 +186,7 @@ mkgcrdec:   lda sendgcrraw,y
             ; find current track number
             ; this assumes the head is on a valid half track
 findtrackn: lda #-$01; invalid track number -> no track step
-            ldy #ANYSECTOR
+            ldy #ANYSECTOR; $ff
             jsr getblkstid; no sector link sanity check, set CURTRACK
             bcs :+
 
@@ -414,102 +414,102 @@ waitdatahd: sta BLOCKINDEX; store sector index
                          ; error or cycle candidate
 
             ; read and partially inflate the gcr nibbles to 8 bits
-            lda VIA2_PRA                   ;    ;   11222223
-            alr #(GCR_NIBBLE_MASK << 1) | 1;    ;   ...22222:3 - and + lsr
+            lda VIA2_PRA                    ;    ;   11222223
+            alr #(GCR_NIBBLE_MASK << 1) | 1 ;    ;   ...22222:3 - and + lsr
             clv  ; this portion can't be replaced by calling the similar bit
             bvc *; at the end of waitsync because of too big calling overhead
            ;ldx #$00
-loaddata:   ldy VIA2_PRA                   ; 14 ;   33334444      1 - cycle 14 in [0..25]
-            sta HINIBBLES + $00,x          ; 19
-            tya                            ; 21
-            ror                            ; 23 ;   33333444
-            lsr                            ; 25 ;   .3333344
-            lsr                            ; 27 ;   ..333334
-            lsr                            ; 29 ;   ...33333   - final: 3
-            sta LONIBBLES + $00,x          ; 34
-            txa                            ; 36
-            axs #-$03                      ; 38 ; x = x + 3
-            tya                            ; 40 ;   33334444
-            ldy VIA2_PRA                   ; 44 ;   45555566     2 - cycle 44 in [32..51]
-            clv                            ; 46                    - cycle 46 in [32..51]
-            cpy #$80                       ; 48 ; 4:45555566
-            rol                            ; 50 ;   33344444
-            and #GCR_NIBBLE_MASK           ; 52 ;   ...44444   - final: 4
+loaddata:   ldy VIA2_PRA                    ; 14 ;   33334444      1 - cycle 14 in [0..25]
+            sta HINIBBLES + $00,x           ; 19
+            tya                             ; 21
+            ror                             ; 23 ;   33333444
+            lsr                             ; 25 ;   .3333344
+            lsr                             ; 27 ;   ..333334
+            lsr                             ; 29 ;   ...33333   - final: 3
+            sta LONIBBLES + $00,x           ; 34
+            txa                             ; 36
+            axs #-$03                       ; 38 ; x = x + 3
+            tya                             ; 40 ;   33334444
+            ldy VIA2_PRA                    ; 44 ;   45555566     2 - cycle 44 in [32..51]
+            clv                             ; 46                    - cycle 46 in [32..51]
+            cpy #$80                        ; 48 ; 4:45555566
+            rol                             ; 50 ;   33344444
+            and #GCR_NIBBLE_MASK            ; 52 ;   ...44444   - final: 4
                ; 52 cycles in [0..51]
 
-            bvc *                          ;  3 ;   3 cycles variance
-            sta HINIBBLES + $01 - 3,x      ;  8
-            tya                            ; 10 ;   45555566
-            alr #%01111111                 ; 12 ;   ..555556:6 - and + lsr
-            sta LONIBBLES + $01 - 3,x      ; 17
-            lda VIA2_PRA                   ; 21 ;   66677777     3 - cycle 16 in [0..25]
-            tay                            ; 23
-            ror                            ; 25 ;   66667777
-            lsr LONIBBLES + $01 - 3,x      ; 32 ;   ...55555:6 - final: 5
-            ror                            ; 34 ;   66666777
-            lsr                            ; 36 ;   .6666677
-            lsr                            ; 38 ;   ..666667
-            lsr                            ; 40 ;   ...66666   - final: 6
-            sta HINIBBLES + $02 - 3,x      ; 45
-            lda VIA2_PRA                   ; 49 ;   00000111     4 - cycle 49 in [32..51]
-            lsr                            ; 51 ;   .0000011:1
-            sta HINIBBLES + $03 - 3,x      ; 56
-            tya                            ; 58 ;   66677777
-            and #GCR_NIBBLE_MASK           ; 60 ;   ...77777   - final: 7
-            sta LONIBBLES + $02 - 3,x      ; 65
-            lda VIA2_PRA                   ; 69 ;   11222223     0 - cycle 69 in [64..77]
-            clv                            ; 71                    - cycle 71 in [64..77]
-            ror                            ; 73 ;   11122222:3
-            sta LONIBBLES + $03 - 3,x      ; 78
+            bvc *                           ;  3 ;   3 cycles variance
+            sta HINIBBLES + $01 - 3,x       ;  8
+            tya                             ; 10 ;   45555566
+            alr #%01111111                  ; 12 ;   ..555556:6 - and + lsr
+            sta LONIBBLES + $01 - 3,x       ; 17
+            lda VIA2_PRA                    ; 21 ;   66677777     3 - cycle 16 in [0..25]
+            tay                             ; 23
+            ror                             ; 25 ;   66667777
+            lsr LONIBBLES + $01 - 3,x       ; 32 ;   ...55555:6 - final: 5
+            ror                             ; 34 ;   66666777
+            lsr                             ; 36 ;   .6666677
+            lsr                             ; 38 ;   ..666667
+            lsr                             ; 40 ;   ...66666   - final: 6
+            sta HINIBBLES + $02 - 3,x       ; 45
+            lda VIA2_PRA                    ; 49 ;   00000111     4 - cycle 49 in [32..51]
+            lsr                             ; 51 ;   .0000011:1
+            sta HINIBBLES + $03 - 3,x       ; 56
+            tya                             ; 58 ;   66677777
+            and #GCR_NIBBLE_MASK            ; 60 ;   ...77777   - final: 7
+            sta LONIBBLES + $02 - 3,x       ; 65
+            lda VIA2_PRA                    ; 69 ;   11222223     0 - cycle 69 in [64..77]
+            clv                             ; 71                    - cycle 71 in [64..77]
+            ror                             ; 73 ;   11122222:3
+            sta LONIBBLES + $03 - 3,x       ; 78
                ; 78 cycles in [0..77]
 
-            bvc *                          ;  3 ; 3 cycles variance
-            and #GCR_NIBBLE_MASK           ;  5 ;   ...22222   - final: 2
-            inx                            ;  7
-scanswt0:   bne loaddata                   ; 10
+            bvc *                           ;  3 ; 3 cycles variance
+            and #GCR_NIBBLE_MASK            ;  5 ;   ...22222   - final: 2
+            inx                             ;  7
+scanswt0:   bne loaddata                    ; 10
 
                ; a 5-GCR-bytes cycle minimally takes approximately 130 cycles in speed zone 11, 52 + 78 = 130
 
             .assert .hibyte(*) = .hibyte(loaddata), error, "***** Page boundary crossing in GCR fetch loop, fatal cycle loss. *****"
 
-            tay                            ; 11 ;   ...22222
-            lda VIA2_PRA                   ; 15 ;   33334444     1 - cycle 15 in [0..25]
-            jsr decodesub - $01            ; decode data checksum
+            tay                             ; 11 ;   ...22222
+            lda VIA2_PRA                    ; 15 ;   33334444     1 - cycle 15 in [0..25]
+            jsr decodesub - $01             ; decode data checksum
             tay
 
             ; finish gcr inflation and checksum the data
             ldx #$00
-gcrfinish:  lda LONIBBLES + $03,x          ;        11122222     4
-            lsr HINIBBLES + $03,x          ;        ..000001:1   7
-            ror                            ;        11112222     2
-            lsr HINIBBLES + $03,x          ;        ...00000:1   7 - final: 0
-            ror                            ;        11111222     2
-            lsr                            ;        .1111122     2
-            lsr                            ;        ..111112     2
-            lsr                            ;        ...11111     2 - final: 1
-            sta LONIBBLES + $03,x          ;                     5 = 30
-            tya                            ;                     2
-            ldy HINIBBLES + $00,x          ;                     4
-            eor GCRDECODEHI,y              ;                     4
-            ldy LONIBBLES + $00,x          ;                     4
-            eor GCRDECODELO,y              ;                     4
-            ldy HINIBBLES + $01,x          ;                     4
-            eor GCRDECODEHI,y              ;                     4
-            ldy LONIBBLES + $01,x          ;                     4
-            eor GCRDECODELO,y              ;                     4
-            ldy HINIBBLES + $02,x          ;                     4
-            eor GCRDECODEHI,y              ;                     4
-            ldy LONIBBLES + $02,x          ;                     4
-            eor GCRDECODELO,y              ;                     4
-            ldy HINIBBLES + $03,x          ;                     4
-            eor GCRDECODEHI,y              ;                     4
-            ldy LONIBBLES + $03,x          ;                     4
-            eor GCRDECODELO,y              ;                     4
-            tay                            ;                     2
-            txa                            ;                     2
-            axs #-$04; x = x + 4           ;                     2
-scanswt1:   bne gcrfinish                  ;                     3 = 75
-                                           ;                       = 105
+gcrfinish:  lda LONIBBLES + $03,x           ;        11122222     4
+            lsr HINIBBLES + $03,x           ;        ..000001:1   7
+            ror                             ;        11112222     2
+            lsr HINIBBLES + $03,x           ;        ...00000:1   7 - final: 0
+            ror                             ;        11111222     2
+            lsr                             ;        .1111122     2
+            lsr                             ;        ..111112     2
+            lsr                             ;        ...11111     2 - final: 1
+            sta LONIBBLES + $03,x           ;                     5 = 30
+            tya                             ;                     2
+            ldy HINIBBLES + $00,x           ;                     4
+            eor GCRDECODEHI,y               ;                     4
+            ldy LONIBBLES + $00,x           ;                     4
+            eor GCRDECODELO,y               ;                     4
+            ldy HINIBBLES + $01,x           ;                     4
+            eor GCRDECODEHI,y               ;                     4
+            ldy LONIBBLES + $01,x           ;                     4
+            eor GCRDECODELO,y               ;                     4
+            ldy HINIBBLES + $02,x           ;                     4
+            eor GCRDECODEHI,y               ;                     4
+            ldy LONIBBLES + $02,x           ;                     4
+            eor GCRDECODELO,y               ;                     4
+            ldy HINIBBLES + $03,x           ;                     4
+            eor GCRDECODEHI,y               ;                     4
+            ldy LONIBBLES + $03,x           ;                     4
+            eor GCRDECODELO,y               ;                     4
+            tay                             ;                     2
+            txa                             ;                     2
+            axs #-$04; x = x + 4            ;                     2
+scanswt1:   bne gcrfinish                   ;                     3 = 75
+                                            ;                       = 105
 
             .assert .hibyte(*) = .hibyte(gcrfinish), error, "***** Page boundary crossing in GCR finishing loop, unnecessary cycle loss. *****"
 
@@ -803,7 +803,7 @@ runmodule:
 .if !LOAD_ONCE
             sec
             ror VIA2_T1C_H; reset watchdog time-out, this also clears the possibly
-                          ; pending timer 1 irq flag
+                          ; pending timer 1 IRQ flag
             ENABLE_WATCHDOG; enable watchdog, the computer might be reset while sending over a
                            ; byte, leaving the drive waiting for handshake pulses
 .endif; !LOAD_ONCE
@@ -815,8 +815,6 @@ runmodule:
             ;sta LOADEDMODULE
             jam
             nop
-            brk; padding
-            brk; padding
 
             ; load module loader
             ; the module library track and sector are stored in
@@ -963,7 +961,7 @@ restart:    ldx #.lobyte(stackend - $05)
 
 .if UNINSTALL_RUNS_DINSTALL
 
-            lda #T1_FREE_RUNNING | PA_LATCHING_ENABLE; watchdog irq: count phi2 pulses, 16-bit free-running,
+            lda #T1_FREE_RUNNING | PA_LATCHING_ENABLE; watchdog IRQ: count phi2 pulses, 16-bit free-running,
                                                      ; enable port a latching to grab one gcr byte at a time
                                                      ; rather than letting the gcr bitstream scroll through
                                                      ; port a (applies to 1541 and Oceanic OC-118, but not
@@ -993,11 +991,11 @@ restart:    ldx #.lobyte(stackend - $05)
             bmi :-
 
            ;ldx #IRQ_CLEAR_FLAGS | IRQ_ALL_FLAGS; $7f
-            stx VIA1_IER; no irqs from via 1
-            stx VIA2_IER; no irqs from via 2
+            stx VIA1_IER; no IRQs from VIA 1
+            stx VIA2_IER; no IRQs from VIA 2
 
             lda #IRQ_SET_FLAGS | IRQ_TIMER_1
-            sta VIA2_IER; timer 1 irqs from via 2
+            sta VIA2_IER; timer 1 IRQs from VIA 2
 
             lda #JOBCODE_EXECUTE
             sta JOBCODE0300; execute watchdog handler at $0300 on watchdog time-out
@@ -1007,14 +1005,14 @@ restart:    ldx #.lobyte(stackend - $05)
 
            ;ldx #$7f
             stx LOADEDMODULE 
-.else
-            lda #T1_FREE_RUNNING | PA_LATCHING_ENABLE; watchdog irq: count phi2 pulses, 16-bit free-running,
+.else; !UNINSTALL_RUNS_DINSTALL
+            lda #T1_FREE_RUNNING | PA_LATCHING_ENABLE; watchdog IRQ: count phi2 pulses, 16-bit free-running,
                                                      ; enable port a latching to grab one gcr byte at a time
                                                      ; rather than letting the gcr bitstream scroll through
                                                      ; port a (applies to 1541 and Oceanic OC-118, but not
                                                      ; 1541-II)
             sta VIA2_ACR
-.endif; UNINSTALL_RUNS_DINSTALL
+.endif; !UNINSTALL_RUNS_DINSTALL
             rts; returns to dcodinit
 
 drvprgend41:

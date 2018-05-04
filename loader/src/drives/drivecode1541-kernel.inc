@@ -1,4 +1,9 @@
 
+; Uncomment to compile the 1541 drivecode for Century Planning Corp. CX-500/Tecmate NPH-501C, which is
+; not a clone, as the VIAs are located at $3800 and $5c00 due to simplified address decoding logics, and
+; the ROM including the position of the GCR encoding and decoding tables is entirely different as well.
+;CX500                = 1
+
 JOBCODE0300          = $00
 JOBCODE0400          = $01
 JOBCODE0500          = $02
@@ -70,10 +75,15 @@ ROMOS_HEADER_TRACK   = $18
 ROMOS_HEADER_SECTOR  = $19
 ROMOS_TRACK_DIFF     = $42
 
+.ifdef CX500
+GCRENCODE            = $fc35
+GCRDECODEHI          = $fc45
+GCRDECODELO          = $fc65
+.else
 GCRENCODE            = $f77f
 GCRDECODEHI          = $f8a0
 GCRDECODELO          = $f8c0
-
+.endif
 
 BINARY_NIBBLE_MASK   = %00001111
 GCR_NIBBLE_MASK      = %00011111

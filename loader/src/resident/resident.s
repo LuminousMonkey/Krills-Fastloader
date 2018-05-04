@@ -89,6 +89,7 @@ endresijmptable:
             CHECK_RESIDENT_START_ADDRESS
 .endif
 
+            TRANSFER_TABLE
 
 .if LOAD_RAW_API
 
@@ -587,6 +588,7 @@ nofallback:
 
 .endif; LOAD_VIA_KERNAL_FALLBACK
 
+            GETBYTE_SETUP
             WAKEUP
 
 .if BYTESTREAM | END_ADDRESS_API
@@ -766,13 +768,15 @@ getblnofbk:
             bcc returnok
 .endif; !(OPEN_FILE_POLL_BLOCK_API | NONBLOCKING_API)
 
-            ; accu is DEVICE_NOT_PRESENT ($00 or $01), LOAD_FINISHED ($fe, file loaded successfully), or LOAD_ERROR ($ff, file not found or illegal t or s) here
+            ; accu is DEVICE_NOT_PRESENT ($00 or $01),
+            ; LOAD_FINISHED ($fe, file loaded successfully),
+            ; or LOAD_ERROR ($ff, file not found or illegal t or s) here
 evalerr:
             IDLE
 
             cmp #LOAD_FINISHED; $fe
             beq returnok; returns with carry set
-            clc
+strobdelay: clc
 .if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
             ; accu = $ff (LOAD_ERROR) -> diskio::status::FILE_NOT_FOUND ($fb)
             ; accu = $00 (DEVICE_NOT_PRESENT) -> diskio::status::DEVICE_NOT_PRESENT ($fc)
@@ -790,16 +794,19 @@ pollfail:   sec
             rts
 
 getblock:   lda #DEVICE_NOT_PRESENT
-            PREPARE_ATN_STROBE
+            PREPARE_SEND_BLOCK_SIGNAL
             WAITREADY
             bmi pollfail; branch if device not present
 
-            BEGIN_ATN_STROBE
+            BEGIN_SEND_BLOCK_SIGNAL
             ; no asynchronicity
-            jsr pollfail; sec : rts - waste some time to make sure the drive is ready
-            END_ATN_STROBE
+            jsr strobdelay; adc # : sec : rts - waste some time to make sure the drive is ready
+            END_SEND_BLOCK_SIGNAL
 
             jsr get1byte; get block index or error/eof code
+.if GETBYTE_SETS_VALUE_FLAGS = 0
+            tax
+.endif
 
             ; when enabling this, the PRINTHEX symbol must be marked as an import in the dynlink library -
             ; uncomment the PRINTHEX import line in ../Makefile for this purpose.
@@ -819,13 +826,6 @@ DEBUG_BLOCKLOAD = 0
 .endif; DEBUG_BLOCKLOAD
 
             sta BLOCKINDEX
-
-.if BYTESTREAM
-            jsr loadedsub
-            ora loadedtb,y
-            sta loadedtb,y; mark this block as loaded
-            lda BLOCKINDEX
-.endif
             bne not1stblk
 
             ; first block: get load address
@@ -850,7 +850,7 @@ storeladrl: sta loadaddrlo; is changed to lda on load_to
 storeladrh: sta loadaddrhi; is changed to lda on load_to
             sta storebyte + $02
 
-            pla
+            pla; block size
             sec
             sbc #$02
             bcs fin1stblk; jmp
@@ -861,7 +861,6 @@ not1stblk:  cmp #SPECIAL_BLOCK_NOS; check for special block numbers: LOAD_FINISH
 .else
             bcs polldone
 .endif
-
             ; calculate the position in memory according to the block number,
             ; this is performing: pos = loadaddr + blockindex * 254 - 2
             lda loadaddrlo
@@ -898,52 +897,70 @@ fin1stblk:
 .if BYTESTREAM
             sta blocksize
 .endif
-
-.if LOAD_UNDER_D000_DFFF & (PLATFORM <> diskio::platform::COMMODORE_16)
-            ldy #OPC_LDX_IMM; enable getbyte loop
-.else
-            ldy #OPC_STA_ABSY; enable getbyte loop
-.endif
-            SKIPWORD
-get1byte:   ldy #OPC_RTS; disable getbyte loop
-            sty blockrts
-
             tax; a contains block size - 1
             eor #$ff
-.if LOAD_UNDER_D000_DFFF & (PLATFORM <> diskio::platform::COMMODORE_16)
-            cpy #OPC_LDX_IMM
-.else
-            cpy #OPC_STA_ABSY
-.endif
-            bne getblkloop; branch if get1byte            
             tay; 0 - block size
-           ;sec
+            sec
             txa
             adc BLOCKDESTLO
             sta storebyte + $01
-            bcs getblkloop
+            bcs :+
             dec storebyte + $02
+:
+            ; getblock loop/get1byte subroutine
+.if LOAD_UNDER_D000_DFFF & (PLATFORM <> diskio::platform::COMMODORE_16)
+            ; trading off speed for size: choose one of two getblock loops
+            ; depending on the destination of the data to be downloaded
+            lda storebyte + $02
+            cmp #.hibyte($cf00)
+            bcc :+
+            cmp #.hibyte($e000)
+            bcc getblockio
+:
+.endif; LOAD_UNDER_D000_DFFF & (PLATFORM <> diskio::platform::COMMODORE_16)
 
+            lda #OPC_STA_ABSY; enable getblock loop
+            SKIPWORD
+get1byte:   lda #OPC_RTS     ; disable getblock loop
+            sta getbloopsw
 getblkloop: GETBYTE
-blockrts:
-.if LOAD_UNDER_D000_DFFF & (PLATFORM <> diskio::platform::COMMODORE_16)
-            ENABLE_ALL_RAM_X
-.endif
-storebyte:  sta a:$00,y    ; 5
-.if LOAD_UNDER_D000_DFFF & (PLATFORM <> diskio::platform::COMMODORE_16)
-memconfig:  ldx #$00
-            SET_MEMCONFIG_X
-.endif
-            iny            ; 2
-            bne getblkloop ; 3
-                           ; = 10
-
+getbloopsw: 
+storebyte:  sta a:$00,y      ; 5
+            iny              ; 2
+            bne getblkloop   ; 3
+                             ; = 10
 .ifndef DYNLINK_EXPORT
             .assert .hibyte(* + 1) = .hibyte(getblkloop), warning, "***** Performance warning: Page boundary crossing (getblkloop). Please relocate the DISKIO segment a few bytes up or down. *****"
 .endif
 
-.if END_ADDRESS
+.if LOAD_UNDER_D000_DFFF & (PLATFORM <> diskio::platform::COMMODORE_16)
+            beq gotblock; jmp
 
+getblockio: lda storebyte + $01
+            sta storebytio + $01
+            lda storebyte + $02
+            sta storebytio + $02
+getblklpio: GETBYTE
+            STOREBYTE_ALLRAM
+            iny
+            bne getblklpio
+
+    .ifndef DYNLINK_EXPORT
+            .assert .hibyte(* + 1) = .hibyte(getblklpio), warning, "***** Performance warning: Page boundary crossing (getblklpio). Please relocate the DISKIO segment a few bytes up or down. *****"
+    .endif
+
+gotblock:
+.endif; LOAD_UNDER_D000_DFFF & (PLATFORM <> diskio::platform::COMMODORE_16)
+
+.if BYTESTREAM
+            lda BLOCKINDEX
+            jsr loadedsub
+            ora loadedtb,y
+            sta loadedtb,y; mark this block as loaded
+.endif
+
+.if END_ADDRESS
+            ; update end address
             ldx storebyte + $01
             cpx endaddrlo
             ldy storebyte + $02
@@ -968,7 +985,7 @@ memconfig:  ldx #$00
             clc; ok
 .endif; !DEBUG_BLOCKLOAD
 
-polldone:   ENDGETBLOCK
+polldone:   ENDGETBLOCK; restore clock configuration
             rts
 
 .if INSTALL_FROM_DISK | (FILESYSTEM <> FILESYSTEMS::DIRECTORY_NAME)

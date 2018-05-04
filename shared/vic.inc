@@ -14,7 +14,7 @@ DISPLAY_LINES_PAL         = 312
 DISPLAY_LINES_NTSC        = 263
 
 VSYNC_LINE_PAL            = 0
-VSYNC_LINE_NTSC           = 25
+VSYNC_LINE_NTSC           = 20
 
 SCREEN_COLUMNS            = 40
 SCREEN_ROWS               = 25
@@ -218,7 +218,7 @@ loop:       cmp VIC2_RASTERLINE
 
 .macro DISPLAY_HIRES_BITMAP bitmap, screen
             WAIT_VBL
-            lda #BITMAP_MODE | DISPLAY_ENABLE | LINES_25 | SCROLLY_0
+            lda #BITMAP_MODE | DISPLAY_ENABLE | LINES_25 | SCROLLY_3
             sta VIC2_CTRL1
             lda #SINGLECOLOUR_MODE | COLUMNS_40 | SCROLLX_0
             sta VIC2_CTRL2
@@ -226,7 +226,7 @@ loop:       cmp VIC2_RASTERLINE
             sta VIC2_ADDR
             lda CIA2_PRA
             and #~VIC2_BANK_MASK
-            lda #VIC2_MAKE_BANK(bitmap)
+            ora #VIC2_MAKE_BANK(bitmap)
             sta CIA2_PRA
 .endmacro
 

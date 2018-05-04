@@ -11,21 +11,23 @@ _LOADER_INC_ = 1
 
 ; available protocols, file systems, and decompressors
 
-.enum PROTOCOLS     ; the available transfer protocols - in this version, only TWO_BITS_ATN is implemented
+.enum PROTOCOLS     ; the available transfer protocols - in this version, only TWO_BITS_RESEND and TWO_BITS_ATN are implemented
 
-   ;ONE_BIT         ; clocking every bit. allows for arbitrary interrupts, yet it's slower than TWO_BITS_ATN
-                    ; and TWO_BITS but has no iec bus restrictions - not implemented yet
+    TWO_BITS_RESEND ; the fastest protocol: allows for quasi-arbitrary interrupts (sprites, bad lines, etc.),
+                    ; but bytes are resent on interrupt disturbances, more interrupts mean slower speed due to more resends
+    TWO_BITS_ATN    ; the fastest protocol that allows for arbitrary interrupts (sprites, bad lines, etc.),
+                    ; but it works with only 1 device on the bus
+   ;TWO_BITS_NOBL   ; same as TWO_BITS but without bad line checks, so bad lines are not allowed outside IRQ handlers,
+                    ; has the same drive-side routine as TWO_BITS - not implemented yet
    ;TWO_BITS        ; clocking every byte, the 8 bits within a byte are transferred strictly synchronously
-                    ; and in groups of 2, no iec bus restrictions
+                    ; and in groups of 2, no serial bus restrictions
                     ; allows for badlines, but does not allow for arbitrary
                     ; interrupts, so sprites are forbidden in the main loop, also sei and cli are used,
                     ; so interrupts are delayed for maximum 2 rasterlines - not implemented yet
-   ;TWO_BITS_NOBL   ; same as TWO_BITS but without bad line checks, so bad lines are not allowed outside irq handlers,
-                    ; has the same drive-side routine as TWO_BITS - not implemented yet
-   ;TWO_BITS_BURST  ; same as TWO_BITS but with bigger irq delay,
-                    ; the fastest available protocol - not implemented yet
-    TWO_BITS_ATN    ; the fastest protocol that allows for arbitrary interrupts (sprites, bad lines, etc.)
-                    ; but it works with only 1 iec device on the bus.
+   ;ONE_BIT         ; clocking every bit. allows for arbitrary interrupts, it's slower than TWO_BITS_ATN
+                    ; and TWO_BITS but has no serial bus restrictions - not implemented yet
+   ;FULLY_ASYNC     ; clocking and acking every bit. allows for CPU acceleration and arbitrary interrupts,
+                    ; but is the slowest protocol - not implemented yet
 .endenum
 
 .enum FILESYSTEMS   ; the available file systems - in this version, only DIRECTORY_NAME, and TRACK_SECTOR is implemented
@@ -707,15 +709,17 @@ bitset:     eor #IO_PORT_SERIAL_CLK_OUT
             CIA2_DDRA_COMMON   = CIA_SERIAL_DATA_IN_INPUT | CIA_SERIAL_CLK_IN_INPUT | CIA_VIC2_BANK_OUTPUT; $03
                                                                                                                                        ; effectively, this is the kernal flag;
                                                                                                                                        ; 0 = input  = loader,
-            ; DATA OUT, CLK OUT, ATN out are low; RS232 is low                                                                         ; 1 = output = kernal
-            CIA2_DDRA_KERNAL   = CIA2_DDRA_COMMON | CIA_SERIAL_DATA_OUT_OUTPUT | CIA_SERIAL_CLK_OUT_OUTPUT | CIA_SERIAL_ATN_OUT_OUTPUT | CIA_RS232_OUTPUT; $3f
+            ; DATA OUT, CLK OUT, ATN out are low; RS232_TXD is low                                                                     ; 1 = output = kernal
+            CIA2_DDRA_KERNAL   = CIA2_DDRA_COMMON | CIA_SERIAL_DATA_OUT_OUTPUT | CIA_SERIAL_CLK_OUT_OUTPUT | CIA_SERIAL_ATN_OUT_OUTPUT | CIA_RS232_TXD_OUTPUT; $3f
 
-            ; DATA OUT, CLK OUT, ATN OUT are high; RS232 is high; all bits except bank bits are inputs so that $dd00 writes do not change the bus state
-            CIA2_DDRA_IDLE     = CIA2_DDRA_COMMON | CIA_SERIAL_DATA_OUT_INPUT  | CIA_SERIAL_CLK_OUT_INPUT  | CIA_SERIAL_ATN_OUT_INPUT  | CIA_RS232_INPUT ; $03
+            ; DATA OUT, CLK OUT, ATN OUT are high; RS232_TXD input; all bits except bank bits are inputs so that $dd00 writes do not change the bus state
+            CIA2_DDRA_IDLE     = CIA2_DDRA_COMMON | CIA_SERIAL_DATA_OUT_INPUT  | CIA_SERIAL_CLK_OUT_INPUT  | CIA_SERIAL_ATN_OUT_INPUT  | CIA_RS232_TXD_INPUT ; $03
 
-            ; DATA OUT is high, CLK OUT, ATN out are low; RS232 is high
-            CIA2_DDRA_WAKEUP   = CIA2_DDRA_COMMON | CIA_SERIAL_DATA_OUT_INPUT  | CIA_SERIAL_CLK_OUT_OUTPUT | CIA_SERIAL_ATN_OUT_OUTPUT | CIA_RS232_INPUT ; $1b
+            ; DATA OUT is high, CLK OUT, ATN out are low; RS232_TXD input
+            CIA2_DDRA_WAKEUP   = CIA2_DDRA_COMMON | CIA_SERIAL_DATA_OUT_INPUT  | CIA_SERIAL_CLK_OUT_OUTPUT | CIA_SERIAL_ATN_OUT_OUTPUT | CIA_RS232_TXD_INPUT ; $1b
 
+            ; DATA OUT, CLK OUT, ATN out are low; RS232_TXD is input
+            CIA2_DDRA_OPERATE  = CIA2_DDRA_COMMON | CIA_SERIAL_DATA_OUT_OUTPUT | CIA_SERIAL_CLK_OUT_OUTPUT | CIA_SERIAL_ATN_OUT_OUTPUT | CIA_RS232_TXD_INPUT ; $3b
             .endif; _CIA_INC_
         .endif
 

@@ -139,6 +139,7 @@ CIA1_CRB                          = CIA1_BASE + $0f; Control Register B
  COUNT_CNT_POS                    = %00100000
  COUNT_TA_UNDF                    = %01000000
  COUNT_TA_UFCN                    = %01100000
+ COUNT_CRB_MASK                   = COUNT_TA_UFCN
  TOD_SET_CLOCK                    = %00000000
  TOD_SET_ALARM                    = %10000000
 
@@ -163,7 +164,7 @@ CIA2_PRA                          = CIA2_BASE + $00; Port register A
  VIC2_BANK_SHIFT                  = 0
  VIC2_BANK_MASK                   = VIC2_BANK
   .define VIC2_MAKE_BANK(address) .lobyte(((address & $c000) >> 14) ^ 3)
- RS232_OUT                        = CIA_PIO2
+ RS232_TXD                        = CIA_PIO2
  SERIAL_ATN_OUT                   = CIA_PIO3
  SERIAL_CLK_OUT                   = CIA_PIO4
  SERIAL_DATA_OUT                  = CIA_PIO5
@@ -189,8 +190,8 @@ CIA2_DDRA                         = CIA2_BASE + $02; Data direction register A
  CIA_VIC2_BANK_INPUT              = %00000000
 ;CIA_PIO2_OUTPUT                  = CIA_PIO2
 ;CIA_PIO2_INPUT                   = %00000000
- CIA_RS232_OUTPUT                 = CIA_PIO2
- CIA_RS232_INPUT                  = %00000000
+ CIA_RS232_TXD_OUTPUT             = CIA_PIO2
+ CIA_RS232_TXD_INPUT              = %00000000
 ;CIA_PIO3_OUTPUT                  = CIA_PIO3
 ;CIA_PIO3_INPUT                   = %00000000
  CIA_SERIAL_ATN_OUT_OUTPUT        = CIA_PIO3
@@ -271,6 +272,7 @@ CIA2_CRB                          = CIA2_BASE + $0f; Control Register B
 ;COUNT_CNT_POS                    = %00100000
 ;COUNT_TA_UNDF                    = %01000000
 ;COUNT_TA_UFCN                    = %01100000
+;COUNT_CRB_MASK                   = COUNT_TA_UFCN
 ;TOD_SET_CLOCK                    = %00000000
 ;TOD_SET_ALARM                    = %10000000
 
@@ -397,6 +399,7 @@ CIA_CRB                           = CIA_BASE + $0f; Control Register B
 ;COUNT_CNT_POS                    = %00100000
 ;COUNT_TA_UNDF                    = %01000000
 ;COUNT_TA_UFCN                    = %01100000
+;COUNT_CRB_MASK                   = COUNT_TA_UFCN
 ;TOD_SET_CLOCK                    = %00000000
 ;TOD_SET_ALARM                    = %10000000
 

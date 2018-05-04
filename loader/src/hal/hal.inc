@@ -42,4 +42,20 @@ _HAL_INC_ = 1
 :           BRANCH_IF_CLK_IN_CLEAR :-
 .endmacro
 
+.macro GETBYTE_SETUP
+    .if PROTOCOL = PROTOCOLS::TWO_BITS_RESEND
+            GETBYTE_TWO_BITS_RESEND_SETUP
+    .else
+            GETBYTE_TWO_BITS_ATN_SETUP
+    .endif
+.endmacro
+
+.macro GETBYTE
+    .if PROTOCOL = PROTOCOLS::TWO_BITS_RESEND
+            GETBYTE_TWO_BITS_RESEND
+    .else
+            GETBYTE_TWO_BITS_ATN
+    .endif
+.endmacro
+
 .endif; !_HAL_INC_

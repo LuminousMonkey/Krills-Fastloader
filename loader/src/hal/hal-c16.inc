@@ -16,6 +16,10 @@ _HAL_C16_INC_ = 1
 .endif
 
 
+.macro INIT_PAL_NTSC
+            ; nothing to do
+.endmacro
+
 .macro INIT_KERNAL_SERIAL_ROUTINES
             ; pucrunch trashes $f9, restore it
             lda #$00
@@ -90,9 +94,9 @@ use_ram:
     IO_PORT_DIR_WAKEUP = IO_PORT_DIR_COMMON | IO_PORT_SERIAL_ATN_OUT_OUTPUT | IO_PORT_CST_RD_OUTPUT; $1f
 .endif
 
-CLOCK                  = (0 & IO_PORT_SERIAL_DATA_OUT) | (0 & IO_PORT_SERIAL_CLK_OUT)
-CLOCK_ATN_HI           = CLOCK |      IO_PORT_SERIAL_ATN_OUT ; 1st and 3rd bit pairs
-CLOCK_ATN_LO           = CLOCK | (0 & IO_PORT_SERIAL_ATN_OUT); 2nd and 4th bit pairs
+CLOCK                  = IO_PORT_CST_MTR | (0 & IO_PORT_SERIAL_DATA_OUT) | (0 & IO_PORT_SERIAL_CLK_OUT)
+CLOCK_ATN_HI           = CLOCK |      IO_PORT_SERIAL_ATN_OUT ; 1st and 3rd bit pairs; $0c
+CLOCK_ATN_LO           = CLOCK | (0 & IO_PORT_SERIAL_ATN_OUT); 2nd and 4th bit pairs; $08
 
 
 .macro ENABLE_WAITBUSY_KERNAL
@@ -159,11 +163,11 @@ CLOCK_ATN_LO           = CLOCK | (0 & IO_PORT_SERIAL_ATN_OUT); 2nd and 4th bit p
             bne singleclk
             lda #FORCE_SINGLE_CLOCK
             php
-            sei                                 ; 2
-            ora TED_CHARGEN_ADDR                ; 4
-            sta TED_CHARGEN_ADDR                ; 4
-            plp                                 ; 4
-singleclk:                                      ; = 14
+            sei                  ; 2
+            ora TED_CHARGEN_ADDR ; 4
+            sta TED_CHARGEN_ADDR ; 4
+            plp                  ; 4
+singleclk:                       ; = 14
     .endmacro
 .endif
 
@@ -176,11 +180,11 @@ singleclk:                                      ; = 14
             bne singleclk
             lda #~FORCE_SINGLE_CLOCK
             php
-            sei                                 ; 2
-            and TED_CHARGEN_ADDR                ; 4
-            sta TED_CHARGEN_ADDR                ; 4
-            plp                                 ; 4
-singleclk:                                      ; = 14
+            sei                  ; 2
+            and TED_CHARGEN_ADDR ; 4
+            sta TED_CHARGEN_ADDR ; 4
+            plp                  ; 4
+singleclk:                       ; = 14
     .endmacro
 .endif
 
@@ -269,60 +273,116 @@ bitset:     eor #IO_PORT_SERIAL_CLK_OUT
             sta IO_PORT_DIRECTION
 .endmacro
 
-.macro PREPARE_ATN_STROBE
+.macro PREPARE_SEND_BLOCK_SIGNAL
             ldx #CLOCK_ATN_HI
 .endmacro
 
-.macro BEGIN_ATN_STROBE
+.macro BEGIN_SEND_BLOCK_SIGNAL
             stx IO_PORT
 .endmacro
 
-.macro END_ATN_STROBE
+.macro END_SEND_BLOCK_SIGNAL
             PUSH_CLOCKCONFIG_AND_FORCE_SINGLE_CLOCK
+    .if PROTOCOL = PROTOCOLS::TWO_BITS_ATN
             lda #CLOCK_ATN_LO
             sta IO_PORT
+    .endif
 .endmacro
 
-.macro GETBYTE
-            ldx #CLOCK_ATN_HI                   ; 2
-            lda IO_PORT                         ; 3
-            stx IO_PORT; ATN high               ; 3
-                                                ; = 18 (22 @1MHz)
+.macro TRANSFER_TABLE
+.endmacro
 
-            lsr                                 ; 2
-            lsr                                 ; 2
-            nop                                 ; 2 - delay
-            nop                                 ; 2 - delay
-            ldx #CLOCK_ATN_LO                   ; 2
-            eor IO_PORT                         ; 3
-            stx IO_PORT; ATN low                ; 3
-                                                ; = 16 (19 @1MHz)
+GETBYTE_SETS_VALUE_FLAGS = 0
 
-            lsr                                 ; 2
-            lsr                                 ; 2
-            nop                                 ; 2 - delay
-            nop                                 ; 2 - delay
-            ldx #CLOCK_ATN_HI                   ; 2
-            eor IO_PORT                         ; 3
-            stx IO_PORT; ATN high               ; 3
-                                                ; = 16 (19 @1MHz)
+.macro GETBYTE_TWO_BITS_RESEND_SETUP
+            ; nothing to do
+.endmacro
 
-            lsr                                 ; 2
-            lsr                                 ; 2
-            nop                                 ; 2 - delay
-            eor #IO_PORT_SERIAL_ATN_OUT         ; 2
-            ldx #CLOCK_ATN_LO                   ; 2
-            eor a:IO_PORT                       ; 4 + delay
-            stx IO_PORT; ATN low                ; 3
-                                                ; = 17 (20 @1MHz)
+.macro GETBYTE_TWO_BITS_RESEND
+            .local getbyte
 
-                                                ; + 10 - store + loop
-                                                ; = 67 (80 @1MHz)
+getbyte:    lda #CLOCK_ATN_LO
+            sta IO_PORT; deassert ATN to start byte transfer - PAL (VICE): sta a:IO_PORT
+            nop; PAL: 8 (VICE: 7), NTSC: unknown
+            nop
+            nop
+            nop; bit OPC_BIT_ZP
+            ldx #CLOCK_ATN_HI
+            ; = 15
+
+            lda IO_PORT
+            lsr
+            lsr
+            eor IO_PORT
+            lsr
+            lsr
+            eor IO_PORT
+            lsr
+            lsr
+            eor IO_PORT; NTSC (VICE): eor a:IO_PORT
+            ; = 24
+
+            stx IO_PORT	
+            eor #CLOCK_ATN_LO | (CLOCK_ATN_LO >> 2)
+            bit OPC_BIT_ZP
+            bit IO_PORT; detect time-out
+            bvc getbyte
+            ; = 13
+            ; = 52 + 10 (sta,y iny bne) = 62 (70 @1MHz)
+.endmacro
+
+.macro GETBYTE_TWO_BITS_ATN_SETUP
+            ; nothing to do
+.endmacro
+
+.macro GETBYTE_TWO_BITS_ATN
+            ldx #CLOCK_ATN_HI                       ; 2
+            lda IO_PORT                             ; 3
+            stx IO_PORT; ATN high                   ; 3
+                                                    ; = 18 (22 @1MHz)
+
+            lsr                                     ; 2
+            lsr                                     ; 2
+            nop                                     ; 2 - delay
+            nop                                     ; 2 - delay
+            ldx #CLOCK_ATN_LO                       ; 2
+            eor IO_PORT                             ; 3
+            stx IO_PORT; ATN low                    ; 3
+                                                    ; = 16 (19 @1MHz)
+
+            lsr                                     ; 2
+            lsr                                     ; 2
+            nop                                     ; 2 - delay
+            nop                                     ; 2 - delay
+            ldx #CLOCK_ATN_HI                       ; 2
+            eor IO_PORT                             ; 3
+            stx IO_PORT; ATN high                   ; 3
+                                                    ; = 16 (19 @1MHz)
+
+            lsr                                     ; 2
+            lsr                                     ; 2
+            nop                                     ; 2 - delay
+            eor #CLOCK_ATN_HI | (CLOCK_ATN_LO >> 2) ; 2
+            ldx #CLOCK_ATN_LO                       ; 2
+            eor a:IO_PORT                           ; 4 + delay
+            stx IO_PORT; ATN low                    ; 3
+                                                    ; = 17 (20 @1MHz)
+
+                                                    ; + 10 - store + loop
+                                                    ; = 67 (80 @1MHz)
+.endmacro
+
+.macro STOREBYTE_ALLRAM
+storebytio:  sta a:$00,y
 .endmacro
 
 .macro ENDGETBLOCK
             tax; special block number (irrelevant for regular blocks)
             POP_CLOCKCONFIG
+    .if PROTOCOL = PROTOCOLS::TWO_BITS_RESEND
+            lda #CLOCK_ATN_LO
+            sta IO_PORT
+    .endif
             txa; special block number (irrelevant for regular blocks)
 .endmacro
 
@@ -376,7 +436,8 @@ column = * + $01
             plp
             jmp done
 
-            ; timeout granularity is 8 scanlines XXX TODO NTSC: user-supplied flag or check?
+            ; timeout granularity is 8 scanlines
+			; note: CYCLES_PER_LINE_PAL = CYCLES_PER_LINE_NTSC
             .ifndef SET_TIMER_ADJUST
             SET_TIMER_ADJUST = 57
             .endif
@@ -392,11 +453,11 @@ done:
 .macro ENABLE_TIMER_IRQ
             lda #COUNTER_1_IRQ
             php
-            sei                                 ; 2
-            ora TED_IMR                         ; 4
-            sta TED_IMR                         ; 4
-            plp                                 ; 4
-                                                ; = 14
+            sei         ; 2
+            ora TED_IMR ; 4
+            sta TED_IMR ; 4
+            plp         ; 4
+                        ; = 14
 .endmacro
 
 .macro DISABLE_TIMER_IRQ

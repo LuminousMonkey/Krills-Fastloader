@@ -3,7 +3,7 @@
 
 DRIVETYPE              = $02; unused
 .if PLATFORM = diskio::platform::COMMODORE_16
-PALNTSC                = $03
+PALNTSC                = $03; 0: NTSC
 .else
 PALNTSC                = $a8; RS232 Input Bit count/Tape temporary
 .endif

@@ -105,9 +105,10 @@ BUFFERINDEX           = (BLOCKBUFFER - BUFFER0) / BUFFERSIZE
 .export cmdfdfix0 : absolute
 .export cmdfdfix1 : absolute
 .export cmdfdfix2 : absolute
+.if !DISABLE_WATCHDOG
 .export cmdfdfix3 : absolute
 .export cmdfdfix4 : absolute
-
+.endif
 
 drvcodebeg81: .byte .hibyte(drivebusy81 - * + $0100 - $01); init transfer count hi-byte
 
@@ -505,7 +506,7 @@ illegalts:  ; or illegal t or s
 :           jsr enablewdog
     .endif
 :           bit CIA_PRB; check for ATN in to go high:
-            bpl :-; wait until the computer has acknowledged the file transfer
+            bpl :-     ; wait until the computer has acknowledged the file transfer
             sei; disable watchdog
             jmp drividle
 .endif
@@ -567,9 +568,9 @@ enablewdog: lda cmdfdfix2; 0 for FD
             ENABLE_WATCHDOG
             rts            
 :           lda #IRQ_CLEAR_FLAGS | IRQ_ALL_FLAGS
-            sta VIA_IER; no irqs from via
+            sta VIA_IER; no IRQs from VIA
             lda #IRQ_SET_FLAGS | IRQ_TIMER_1
-            sta VIA_IER; timer 1 irqs from via
+            sta VIA_IER; timer 1 IRQs from VIA
             lda #$ff
             sta VIA_T1C_H
             ENABLE_WATCHDOG
@@ -748,49 +749,125 @@ sendblock:  sta BLOCKBUFFER + $00; block index
             sta CIA_PRB; block ready signal
 waitready:  bit CIA_PRB
             bpl waitready
+
+.if ::PROTOCOL = PROTOCOLS::TWO_BITS_RESEND
+
+            ldy #$00
+            beq sendloop; jmp
+resend:     stx CIA_PRB                                              ; 4
+            dey                                                      ; 2
+:           bit CIA_PRB                                              ; 4 - sync: wait for ATN high
+            bpl :-                                                   ; 3
+
+sendloop:   ldx BLOCKBUFFER,y                                        ; 4
+            lda SENDTABLELO,x                                        ; 4
+:           bit CIA_PRB                                              ; 4 - sync: wait for ATN low
+            bmi :-                                                   ; 3
+            nop                                                      ; 2
+            nop                                                      ; 2
+            bit $24                                                  ; 3
+            sta CIA_PRB                                              ; 4 - ATN is set low prior to reading
+                                                                     ; = 71
+
+            nop                                                      ; 2
+            nop                                                      ; 2
+            nop                                                      ; 2
+            nop                                                      ; 2
+            asl                                                      ; 2
+            and #~ATNA_OUT                                           ; 2
+            sta CIA_PRB                                              ; 4
+                                                                     ; = 16
+
+            nop                                                      ; 2
+            nop                                                      ; 2
+            nop                                                      ; 2
+            nop                                                      ; 2
+            lda SENDTABLEHI,x                                        ; 4
+            sta CIA_PRB                                              ; 4
+                                                                     ; = 16
+
+            nop                                                      ; 2
+            nop                                                      ; 2
+            nop                                                      ; 2
+            nop                                                      ; 2
+            asl                                                      ; 2
+            and #~ATNA_OUT                                           ; 2
+            sta CIA_PRB                                              ; 4
+                                                                     ; = 16
+
+            nop                                                      ; 2
+            nop                                                      ; 2
+            nop                                                      ; 2
+            nop                                                      ; 2
+            nop                                                      ; 2
+            nop                                                      ; 2
+            lda #DATA_OUT                                            ; 2
+            sta CIA_PRB                                              ; 4
+    .if DISABLE_WATCHDOG
+            nop                                                      ; 2
+            nop                                                      ; 2
+            nop                                                      ; 2
+    .else
+cmdfdfix3 = * + 1
+            lda #COUNT_TA_UNDF | FORCE_LOAD | ONE_SHOT | TIMER_START ; is changed to VIA access for FD
+cmdfdfix4 = * + 1
+            sta CIA_CRB                                              ; 2 + 4 - reset watchdog time-out
+    .endif
+            ldx #CLK_OUT                                             ; 2
+dsendcmp:   cpy #$00                                                 ; 2
+            iny                                                      ; 2
+            bit CIA_PRB                                              ; 4
+            bpl resend                                               ; 2
+            bcc sendloop                                             ; 3
+                                                                     ; = 119
+
+.else; ::PROTOCOL != PROTOCOLS::TWO_BITS_RESEND
+
             ldy #$00
 sendloop:
-.if !DISABLE_WATCHDOG
+    .if !DISABLE_WATCHDOG
 cmdfdfix3 = * + 1
-            lda #COUNT_TA_UNDF | FORCE_LOAD | ONE_SHOT | TIMER_START
+            lda #COUNT_TA_UNDF | FORCE_LOAD | ONE_SHOT | TIMER_START ; is changed to VIA access for FD
 cmdfdfix4 = * + 1
-            sta CIA_CRB       ; 2 + 4; reset watchdog time-out
-.endif
-            ldx BLOCKBUFFER,y ; 4
-            lda SENDTABLELO,x ; 4
-                              ; = 22 (+6 with watchdog)
+            sta CIA_CRB                                              ; 2 + 4 - reset watchdog time-out
+    .endif
+            ldx BLOCKBUFFER,y                                        ; 4
+            lda SENDTABLELO,x                                        ; 4
+                                                                     ; = 22 (+6 with watchdog)
 
-:           bit CIA_PRB       ; 4
-            bmi :-            ; 3
-            sta CIA_PRB       ; 4
-            asl               ; 2
-            and #~ATNA_OUT    ; 2
-                              ; = 15
+:           bit CIA_PRB                                              ; 4
+            bmi :-                                                   ; 3
+            sta CIA_PRB                                              ; 4
+            asl                                                      ; 2
+            and #~ATNA_OUT                                           ; 2
+                                                                     ; = 15
 
-:           bit CIA_PRB       ; 4
-            bpl :-            ; 3
-            sta CIA_PRB       ; 4
-            ldx BLOCKBUFFER,y ; 4
-            lda SENDTABLEHI,x ; 4
-                              ; = 19
+:           bit CIA_PRB                                              ; 4
+            bpl :-                                                   ; 3
+            sta CIA_PRB                                              ; 4
+            ldx BLOCKBUFFER,y                                        ; 4
+            lda SENDTABLEHI,x                                        ; 4
+                                                                     ; = 19
 
-:           bit CIA_PRB       ; 4
-            bmi :-            ; 3
-            sta CIA_PRB       ; 4
-            asl               ; 2
-            and #~ATNA_OUT    ; 2
-dsendcmp:   cpy #$00          ; 2
-            iny               ; 2
-                              ; = 19
+:           bit CIA_PRB                                              ; 4
+            bmi :-                                                   ; 3
+            sta CIA_PRB                                              ; 4
+            asl                                                      ; 2
+            and #~ATNA_OUT                                           ; 2
+dsendcmp:   cpy #$00                                                 ; 2
+            iny                                                      ; 2
+                                                                     ; = 19
 
-:           bit CIA_PRB       ; 4
-            bpl :-            ; 3
-            sta CIA_PRB       ; 4
-            bcc sendloop      ; 3
-                              ; = 75
+:           bit CIA_PRB                                              ; 4
+            bpl :-                                                   ; 3
+            sta CIA_PRB                                              ; 4
+            bcc sendloop                                             ; 3
+                                                                     ; = 75
+
+.endif; ::PROTOCOL != PROTOCOLS::TWO_BITS_RESEND
 
 :           bit CIA_PRB; wait for acknowledgement
-            bmi :-     ; of the last data bit pair
+            bmi :-     ; of the last data byte
 
             lda LINKTRACK
             cmp JOBTRKSCTTABLE + (2 * BUFFERINDEX) + TRACKOFFSET

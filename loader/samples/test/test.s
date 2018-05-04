@@ -1,7 +1,7 @@
 
 DYNLINK_IMPORT          = 0
 
-TEST_INVALID_PARAMETERS = 1
+TEST_INVALID_PARAMETERS = 0
 VERIFY                  = 0; verify correct loading by loading twice and comparing
 PAUSE_BETWEEN_LOADS     = 0; amount of frames
 INSTALL_ONLY            = 0
@@ -41,7 +41,7 @@ IRQ_SLACK = $00
 NONBLOCK_YOFFSET = $00
 LOAD_TO_UPPER_MEM = 1
 .else
-NONBLOCK_YOFFSET = $05
+NONBLOCK_YOFFSET = $04
 LOAD_TO_UPPER_MEM = LOAD_UNDER_D000_DFFF
 .endif
 
@@ -1067,6 +1067,20 @@ calibrate:  jsr readctr
 
 :           tya
             pha
+
+.if PLATFORM = diskio::platform::COMMODORE_64
+            ; PAL/NTSC detection mismatch
+            lda #TOD_FREQ_60HZ
+            ldx PALNTSC
+            beq :+
+            lda #TOD_FREQ_50HZ
+:            eor CIA1_CRA
+            bpl :+
+            lda #ERRPALNTSC
+            jmp error
+
+:
+.endif
 
             DISABLE_MEMCONFIG_CHECK
 
@@ -2268,7 +2282,7 @@ initstat:
             sta CIA1_TA_HI
             sta CIA1_TB_HI
             lda CIA1_CRA
-            and #~TOD_FREQ_MASK
+            and #~(COUNT_CNT | ONE_SHOT)
             ora #FORCE_LOAD | CONTINUOUS | TIMER_START
             sta CIA1_CRA
             lda #FORCE_LOAD | CONTINUOUS | COUNT_TA_UNDF | TIMER_START
@@ -3442,7 +3456,7 @@ memchktype = * + $01
             ; install memory check
             beq memchkok
 
-            ; resident memeory check
+            ; resident memory check
 resicheck:
     .if !LOAD_VIA_KERNAL_FALLBACK
             lda TED_CHARGEN_ADDR
@@ -3747,6 +3761,10 @@ irq2:       lda IO_PORT
             sta SPRITES + (17 * $03) + $42
     .endif
 
+    .if TWO_BITS_RESEND_OPTIMIZE = 0
+            ;inc VIC2_SPR_ENABLE
+    .endif
+
     .if LOAD_TO_UPPER_MEM
             lda #$fa
 :           bit VIC2_CTRL1
@@ -3803,7 +3821,7 @@ memchktype = * + $01
             beq memchkok
             bne memchkfail
 
-            ; resident memeory check
+            ; resident memory check
 resicheck:
     .if LOAD_TO_UPPER_MEM
         .if LOAD_VIA_KERNAL_FALLBACK
@@ -4072,7 +4090,7 @@ bothcompd:  .asciiz "be-bothgfx.exo"
         .endif
     .endif
 
-bogusname:  .byte "bli", 'p' | $80, 0
+bogusname:  .byte "Bli", 'p' | $80, 0
 .endif
 
 .if !LOAD_ONCE
@@ -4141,6 +4159,8 @@ errormsgsl: .byte .lobyte(invaliderr); $00
 
             .byte .lobyte(emsgintern); $80
 
+ERRPALNTSC = * - errormsgsl
+            .byte .lobyte(emgpalntsc)
 ERRENDADDR = * - errormsgsl
             .byte .lobyte(emsgendadd)
 MSGUNINST = * - errormsgsl
@@ -4160,7 +4180,7 @@ MSGNOUPLOAD = * - errormsgsl
 .else
             .byte .lobyte(invaliderr)
 .endif
-             .repeat $69, I
+             .repeat $68, I
                 .byte .lobyte(invaliderr)
              .endrep
 
@@ -4194,8 +4214,9 @@ errormsgsh: .byte .hibyte(invaliderr); $00
                 .byte .hibyte(invaliderr)
             .endrep
 
-            .byte .hibyte(emsgintern)
+            .byte .hibyte(emsgintern); $80
 
+            .byte .hibyte(emgpalntsc)
             .byte .hibyte(emsgendadd)
             .byte .hibyte(emsguninst)
             .byte .hibyte(emsgbrkopc)
@@ -4208,7 +4229,7 @@ errormsgsh: .byte .hibyte(invaliderr); $00
 .else
             .byte .hibyte(invaliderr)
 .endif
-            .repeat $69, I
+            .repeat $68, I
                 .byte .hibyte(invaliderr)
             .endrep
 
@@ -4231,6 +4252,8 @@ errormsgsh: .byte .hibyte(invaliderr); $00
 .assert errormsgsh - errormsgsl = $0100, error, "errormsgsl has wrong length"
 .assert * - errormsgsh = $0100, error, "errormsgsh has wrong length"
 
+emgpalntsc: scrcode "PAL/NTSC detection mismatch."
+            .byte $00
 emsgendadd: scrcode "Wrong end address."
             .byte $00
 emsginvmcf: scrcode "Invalid memory configuration"

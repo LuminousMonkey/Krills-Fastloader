@@ -471,7 +471,7 @@ illegalts:  ; file not found or illegal t or s
 .else
 :           ENABLE_WATCHDOG
 :           bit VIA1_PRB; check for ATN in to go high:
-            bpl :-; wait until the computer has acknowledged the file transfer
+            bpl :-      ; wait until the computer has acknowledged the file transfer
             sei; disable watchdog
             jmp driveidle
 .endif
@@ -491,11 +491,13 @@ sendstatus: lda #$00
 sendblock:  ldy #$00
             jsr gcrencode; block index or status byte
 
-            ldx #$ff
-            ldy #$10; here, the watchdog timer is polled manually because
+            ; send block ready signal and wait for
+            ; signal to begin transferring the block
+            ldx #$10; here, the watchdog timer is polled manually because
                     ; an extra-long time-out period is needed since the computer may
                     ; still be busy decompressing a large chunk of data;
                     ; this is the round counter
+            dey; ldy #$ff
             lda #DATA_OUT
             sta VIA1_PRB; block ready signal
             bne :+
@@ -503,58 +505,99 @@ sendblock:  ldy #$00
             ; over the block, leaving the drive waiting forever for handshake pulses
 waitready:  lda VIA2_T1C_H; see if the watchdog barked
             bne :++
-            dey           ; if yes, decrease the round counter
+            dex           ; if yes, decrease the round counter
 .if DISABLE_WATCHDOG
             beq nowatchdog
 nowatchdog:
 .else
             beq timeout; and trigger watchdog on time-out
 .endif
-:           stx VIA2_T1C_H; reset watchdog time-out and clear irq flag
+:           sty VIA2_T1C_H; reset watchdog time-out and clear IRQ flag
 :           bit VIA1_PRB
-            bpl waitready; wait for ATN strobe
-            stx VIA2_T1C_H; reset watchdog time-out and clear possibly set irq flag
+            bpl waitready; wait for ATN = high
+
+            sty VIA2_T1C_H; reset watchdog time-out and clear possibly set IRQ flag
 
 timeout:    ENABLE_WATCHDOG
-            ldy #$00
-sendloop:   ldx LONIBBLES,y    ; 4
-            lda SENDGCRTABLE,x ; 4 - zp access
-                               ; = 22 (20 on computer)
+            iny; ldy #$00
 
-:           bit VIA1_PRB       ; 4 - sync 4: wait for ATN low
-            bmi :-             ; 3 - first byte: wait for end of ATN strobe
-            sta VIA1_PRB       ; 4
-            asl                ; 2
-            ora #ATNA_OUT      ; 2 - next bit pair will be transferred with ATN high - if not set, DATA OUT will be low
-            ldx HINIBBLES,y    ; 4
-                               ; = 19 (22 on computer)
+.if ::PROTOCOL = PROTOCOLS::TWO_BITS_RESEND
 
-:           bit VIA1_PRB       ; 4 - sync 1: wait for ATN high
-            bpl :-             ; 3
-            sta VIA1_PRB       ; 4
-            lda SENDGCRTABLE,x ; 4 - zp access
-            sta VIA2_T1C_H     ; 4 ; reset watchdog time-out
-                               ; = 19 (19 on computer)
+resend:     lda #CLK_OUT                  ; 2
+            sta VIA1_PRB                  ; 4
+:           bit VIA1_PRB                  ; 4 - sync: wait for ATN high
+            bpl :-                        ; 3
 
-:           bit VIA1_PRB       ; 4 - sync 2: wait for ATN low
-            bmi :-             ; 3
-            sta VIA1_PRB       ; 4
-            asl                ; 2
-            ora #ATNA_OUT      ; 2 - next bit pair will be transferred with ATN high - if not set, DATA OUT will be low
-dsendcmp:   cpy #$00           ; 2
-            iny                ; 2
-                               ; = 19 (19 on computer)
+sendloop:   ldx LONIBBLES,y               ; 4
+            lda SENDGCRTABLE,x            ; 4 - zp access
+            ldx HINIBBLES,y               ; 4
+:           bit VIA1_PRB                  ; 4 - sync: wait for ATN low
+            bmi :-                        ; 3
+                                          ; = 42
 
-:           bit VIA1_PRB       ; 4 - sync 3: wait for ATN high
-            bpl :-             ; 3
-            sta VIA1_PRB       ; 4
-            bcc sendloop       ; 3
-                               ; = 79, 7 more than the theoretical limit at 18 cycles per bitpair
+            sta VIA1_PRB                  ; 4
+            asl                           ; 2
+            and #~ATNA_OUT                ; 2
+            sta VIA1_PRB                  ; 4
+            lda SENDGCRTABLE,x            ; 4 - zp access
+            sta VIA1_PRB                  ; 4
+            asl                           ; 2
+            and #~ATNA_OUT                ; 2
+            sta VIA1_PRB                  ; 4
+                                          ; = 28
 
-            .assert .hibyte(*) = .hibyte(sendloop), error, "***** Page boundary crossing in byte send loop, fatal cycle loss. *****"
+            lda #$e0 | DATA_OUT | DATA_IN ; 2
+dsendcmp:   cpy #$00                      ; 2
+            sta VIA1_PRB                  ; 4
+            sta VIA2_T1C_H                ; 4 - reset watchdog time-out
+            bit VIA1_PRB                  ; 4
+            bpl resend                    ; 2
+            iny                           ; 2
+            bcc sendloop                  ; 3
+                                          ; = 70
+
+.else; ::PROTOCOL != PROTOCOLS::TWO_BITS_RESEND
+
+sendloop:   ldx LONIBBLES,y               ; 4
+            lda SENDGCRTABLE,x            ; 4 - zp access
+                                          ; = 22 (20 on computer)
+
+:           bit VIA1_PRB                  ; 4 - sync 4: wait for ATN low
+            bmi :-                        ; 3 - first byte: wait for end of ATN strobe
+            sta VIA1_PRB                  ; 4
+            asl                           ; 2
+            ora #ATNA_OUT                 ; 2 - next bit pair will be transferred with ATN high - if not set, host DATA IN will be low
+            ldx HINIBBLES,y               ; 4
+                                          ; = 19 (22 on computer)
+
+:           bit VIA1_PRB                  ; 4 - sync 1: wait for ATN high
+            bpl :-                        ; 3
+            sta VIA1_PRB                  ; 4
+            lda SENDGCRTABLE,x            ; 4 - zp access
+            sta VIA2_T1C_H                ; 4 - reset watchdog time-out
+                                          ; = 19 (19 on computer)
+
+:           bit VIA1_PRB                  ; 4 - sync 2: wait for ATN low
+            bmi :-                        ; 3
+            sta VIA1_PRB                  ; 4
+            asl                           ; 2
+            ora #ATNA_OUT                 ; 2 - next bit pair will be transferred with ATN high - if not set, host DATA IN will be low
+dsendcmp:   cpy #$00                      ; 2
+            iny                           ; 2
+                                          ; = 19 (19 on computer)
+
+:           bit VIA1_PRB                  ; 4 - sync 3: wait for ATN high
+            bpl :-                        ; 3
+            sta VIA1_PRB                  ; 4
+            bcc sendloop                  ; 3
+                                          ; = 79, 7 more than the theoretical limit at 18 cycles per bitpair
+
+.endif; ::PROTOCOL != PROTOCOLS::TWO_BITS_RESEND
+
+            .assert .hibyte(* + 1) = .hibyte(sendloop), error, "***** Page boundary crossing in byte send loop, fatal cycle loss. *****"
 
 :           bit VIA1_PRB; wait for acknowledgement
-            bmi :-      ; of the last data bit pair
+            bmi :-      ; of the last data byte
 
             ldy #CLK_OUT
             dec SECTORCOUNT

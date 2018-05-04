@@ -143,7 +143,7 @@ MKDIR          = mkdir
 ifeq ($(ARCH),MACOSX)
 RMDIR          = rmdir # XXX TODO xargs to remove .DS_Store
 else
-RMDIR          = rmdir --ignore-fail-on-non-empty
+RMDIR          = rmdir
 endif
 TOUCH          = touch
 CAT            = cat
@@ -164,7 +164,7 @@ ifneq ($(findstring WIN,$(ARCH)),)
 DOSBOX         = DOSBox
 LC             = ..\..\tools\crush $(LCSPEED)
     else
-            # WIN32, CRUSH.EXE does not understand / instead of \
+            # WIN32, CRUSH.EXE does not understand "/" instead of "\"
 LC             = ../../tools/crush $(LCSPEED)
     endif
 else ifeq ($(ARCH),MACOSX)
@@ -177,7 +177,11 @@ LC             = wine ../../tools/crush $(LCSPEED) # XXX TODO try dosemu
 endif
 LCSPEED        = 6
 
-CONV           = java -cp ../../tools CompressedFileConverter
+JAVAC          = javac
+JAVA           = java
+CONVPATH       = ../../tools
+CONVNAME       = CompressedFileConverter
+CONV           = $(JAVA) -cp $(CONVPATH) $(CONVNAME)
 EXO            = exomizer
 
 
@@ -186,7 +190,7 @@ LDRBIN         = ../../build
 LDRINC         = ../../include
 
 BUILDDIR       = ../../build
-INTERMDIR      = ../../build/intermediate
+INTERMDIR      = ../../build/interm
 
 RESOURCESDIR   = ../resources
 
@@ -255,7 +259,7 @@ $(LDRBIN)/drivecode1541-loadfile.prg: $(MODULE1541DEPS)
 	$(MAKE) -C $(LOADER) DEBUG=1 mods
 
 $(INTERMDIR)/kernelsymbols1541.inc: $(LOADER)/drives/drivecode1541.s $(LOADER)/drives/drivecode1541-loadfile.s
-	$(MAKE) -C $(LOADER) ../build/intermediate/kernelsymbols1541.inc # no usage of $(INTERMDIR) to match the path as seen from loader/src
+	$(MAKE) -C $(LOADER) ../build/interm/kernelsymbols1541.inc # no usage of $(INTERMDIR) to match the path as seen from loader/src
 
 
 ../../.svn/entries:
@@ -294,8 +298,11 @@ $(INTERMDIR)/%.bb: $(INTERMDIR)/%.bin
 	$(BB) $?
 	$(MV) $?.bb $@
 
-$(INTERMDIR)/%.bbconv: $(INTERMDIR)/%.bin $(INTERMDIR)/%.bb
-	$(CONV) bb $^ $@
+$(CONVPATH)/$(CONVNAME).class: $(CONVPATH)/$(CONVNAME).java
+	$(JAVAC) $^
+
+$(INTERMDIR)/%.bbconv: $(CONVPATH)/$(CONVNAME).class $(INTERMDIR)/%.bin $(INTERMDIR)/%.bb
+	$(CONV) bb $(filter-out $<, $^) $@
 
 ifeq ($(DOSBOX),)
 $(INTERMDIR)/%.lc: $(INTERMDIR)/%.bin
@@ -303,12 +310,12 @@ $(INTERMDIR)/%.lc: $(INTERMDIR)/%.bin
 	$(MV) out $@
 else
 $(INTERMDIR)/%.lc: $(INTERMDIR)/%.bin
-	export SDL_VIDEODRIVER=dummy && $(DOSBOX) -noconsole -c "MOUNT C ../.." -c "C:" -c "cd build\interm~1" -c "..\$(LC) $(notdir $?) out" -c "exit"
+	export SDL_VIDEODRIVER=dummy && $(DOSBOX) -noconsole -c "MOUNT C ../.." -c "C:" -c "cd build\interm" -c "..\$(LC) $(notdir $?) out" -c "exit"
 	$(MV) $(INTERMDIR)/OUT $@
 endif
 
-$(INTERMDIR)/%.lcconv: $(INTERMDIR)/%.bin $(INTERMDIR)/%.lc
-	$(CONV) lc $^ $@
+$(INTERMDIR)/%.lcconv: $(CONVPATH)/$(CONVNAME).class $(INTERMDIR)/%.bin $(INTERMDIR)/%.lc
+	$(CONV) lc $(filter-out $<, $^) $@
 
 $(INTERMDIR)/%.exo: $(INTERMDIR)/%.bin
 	$(EXO) mem -f $? -o $@

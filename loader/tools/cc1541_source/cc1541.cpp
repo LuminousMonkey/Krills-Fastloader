@@ -188,7 +188,7 @@ linear_sector(image_type type, int track, int sector)
 
     int num_sectors = num_sectors_table[track - 1];
     if ((sector < 0) || (sector >= num_sectors)) {
-        fprintf(stderr, "Illegal sector %d for track %d (max is %d)\n", sector, track, num_sectors - 1);
+        fprintf(stderr, "Illegal sector %d for track %d (max. is %d)\n", sector, track, num_sectors - 1);
         exit(-1);
     }
 
@@ -206,6 +206,11 @@ is_sector_free(image_type type, unsigned char* image, int track, int sector, int
 {
     int bam;
     unsigned char* bitmap;
+
+    if (sector < 0) {
+        fprintf(stderr, "Illegal sector %d for track %d\n", sector, track);
+        exit(-1);
+    }
 
     if ((type == IMAGE_D71) && (track > D64NUMTRACKS)) {
         // access second side bam
@@ -533,7 +538,7 @@ write_files(image_type type, unsigned char* image, struct imagefile* files, int 
             if (track > image_num_tracks(type)) {
                 printf("invalid minimum track %d for file %s (%s) specified\n", track, files[i].localname, files[i].filename);
                 exit(-1);
-           }
+            }
         }
 
         if ((files[i].mode & MODE_SAVETOEMPTYTRACKS) != 0) {
@@ -590,6 +595,7 @@ write_files(image_type type, unsigned char* image, struct imagefile* files, int 
                 const int* num_sectors_table = image_num_sectors_table(type);
                 for (int s = sector; s < sector + num_sectors_table[track - 1]; s++) {
                     findSector = s % num_sectors_table[track - 1];
+                                        //cout << "t" << track << "s" << findSector << endl;
                     if (is_sector_free(type, image, track, findSector, usedirtrack ? numdirblocks : 0, dir_sector_interleave)) {
                         found = true;
                         break;
@@ -597,8 +603,12 @@ write_files(image_type type, unsigned char* image, struct imagefile* files, int 
                 }
 
                 if (found == false) {
-                    // find next track
-                    sector = (sector + 5 - files[i].sectorInterleave /* some magic to make up for track seek delay */) % num_sectors_table[track - 1];
+                    // find next track, use some magic to make up for track seek delay
+                    sector = sector + 5 - files[i].sectorInterleave;
+                    if (sector < 0) {
+                        sector += num_sectors_table[track - 1];
+                    }
+                    sector %= num_sectors_table[track - 1];
                     if (files[i].mode & MODE_SAVECLUSTEROPTIMIZED) {
                         if (track >= D64NUMTRACKS) {
                             track = track - D64NUMTRACKS + 1;
@@ -654,7 +664,7 @@ write_files(image_type type, unsigned char* image, struct imagefile* files, int 
 
             // Write sector
             bytes_to_write = min(BLOCKSIZE - 2, bytesLeft);
-						memcpy(image + offset + 2, filedata + byteOffset, bytes_to_write);
+            memcpy(image + offset + 2, filedata + byteOffset, bytes_to_write);
 
             bytesLeft -= bytes_to_write;
             byteOffset += bytes_to_write;
@@ -759,7 +769,7 @@ print_bam(image_type type, unsigned char* image)
                 } else {
                     printf("1");
                     sectorsOccupied++;
-                   }
+                }
             }
         }
 
@@ -912,15 +922,16 @@ main(int argc, char* argv[])
     if (f == NULL) {
         initialize_directory(type, image, header, id);
     } else {
+        //cout << "opened image file " << imagepath << endl;
         size_t read_size = fread(image, 1, imagesize, f);
         fclose(f);
         if (read_size != imagesize) {
             if (((type == IMAGE_D64_EXTENDED_SPEED_DOS) || (type == IMAGE_D64_EXTENDED_DOLPHIN_DOS)) && (read_size == D64SIZE)) {
                 // Clear extra tracks
-              memset(image + image_size(IMAGE_D64), 0, image_size(type) - image_size(IMAGE_D64));
+                memset(image + image_size(IMAGE_D64), 0, image_size(type) - image_size(IMAGE_D64));
 
-              // Mark all extra sectors unused
-              const int* num_sectors_table = image_num_sectors_table(type);
+                // Mark all extra sectors unused
+                const int* num_sectors_table = image_num_sectors_table(type);
                 for (int t = D64NUMTRACKS + 1; t <= image_num_tracks(type); t++) {
                     for (int s = 0; s < num_sectors_table[t - 1]; s++) {
                         mark_sector(type, image, t, s, true);
@@ -937,10 +948,13 @@ main(int argc, char* argv[])
     }
 
     // Create directory entries
+    //cout << "creating dir entries" << endl;
     create_dir_entries(type, image, files, nrFiles, dir_sector_interleave);
 
     // Write files and mark sectors in BAM
+    //cout << "writing files" << endl;
     write_files(type, image, files, nrFiles, usedirtrack, dirtracksplit, numdirblocks, dir_sector_interleave);
+    //cout << "files written" << endl;
 
     if (quiet == false) {
         printf("%s (%s,%s):\n", imagepath, header, id);

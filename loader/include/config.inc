@@ -7,23 +7,27 @@
 ;   For a minimum-size resident portion in the host's memory,
 ; set all parameters in the 'increase code size' section to 0,
 ; and those in the 'code size reduction' sections to non-0,
+; set PROTOCOL = PROTOCOLS::TWO_BITS_ATN,
 ; set FILESYSTEM = FILESYSTEMS::TRACK_SECTOR,
 ; and set DECOMPRESSOR = DECOMPRESSORS::NONE
 
+
 ; parameters
+
+; this changes the host-side code
+
+.ifndef PLATFORM
+PLATFORM                           = diskio::platform::COMMODORE_64; currently available are COMMODORE_64 and COMMODORE_16
+.endif
 
 ; these change installer code
 
 .define MIN_DEVICE_NO             08 ; these two settings define the device number range when scanning for devices in install.s,
 .define MAX_DEVICE_NO             30 ; devices beyond this range will not be recognized or useable
 
-; these change the host-side code
+; these change both host- and drive-side code
 
-.ifndef PLATFORM
-PLATFORM                           = diskio::platform::COMMODORE_64; currently available are COMMODORE_64 and COMMODORE_16
-.endif
-
-; these change the drive-side code
+PROTOCOL                           = PROTOCOLS::TWO_BITS_RESEND; currently available are TWO_BITS_RESEND and TWO_BITS_ATN
 
 FILESYSTEM                         = FILESYSTEMS::DIRECTORY_NAME; currently available are DIRECTORY_NAME and TRACK_SECTOR
 
@@ -33,13 +37,14 @@ FILESYSTEM                         = FILESYSTEMS::DIRECTORY_NAME; currently avai
                                      ; requires FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
                                      ; reduces code size
 
+; these change the drive-side code
+
 .define DIRTRACK                  18 ; for FILESYSTEM::DIRECTORY_NAME, on 1541/41-C/41-II/70/71/71CR,
                                      ; starting track and sector location of the directory
 .define DIRSECTOR                 00 ; (i.e., the loader's directory can be relocated to hide it from the normal directory command);
                                      ; ineffective for LOAD_ONCE and when loading via KERNAL with LOAD_VIA_KERNAL_FALLBACK != 0
 .define FILENAME_MAXLENGTH        16 ; maximum length of file name, if a directory is capable of holding longer names, extra characters are ignored
 
-; track jump settings
 .define MINSTPSP                 $18 ; min. r/w head stepping speed on 1541/41-C/41-II/70/71/71CR
 .define MAXSTPSP                 $10 ; max. r/w head stepping speed on 1541/41-C/41-II/70/71/71CR
 .define STEPRACC                 $1c ; r/w head stepping acceleration on 1541/41-C/41-II/70/71/71CR
@@ -49,7 +54,7 @@ FILESYSTEM                         = FILESYSTEMS::DIRECTORY_NAME; currently avai
 
 ; features, won't change host-side code size but change some functionality
 
-; changes drive-side code
+; these change drive-side code
 .define UNINSTALL_RUNS_DINSTALL    1 ; this is a patch until the CUSTOM_DRIVE_CODE_API is implemented, use it only if you really know what you are doing.
                                      ; calling uninstall will run dinstall on the drive side, enabling the caller to upload own custom drive code
                                      ; to the .org of the loader, with the size of the loader's drive code.
@@ -64,14 +69,17 @@ FILESYSTEM                         = FILESYSTEMS::DIRECTORY_NAME; currently avai
                                      ; Note: On Plus/4, this option must be enabled for VICE compatibility, as VICE suffers from spurious watchdog interrupts.
 
 
-; following settings are independent from the installed drive code,  several host-side
+; following settings are independent from the installed drive code, several host-side
 ; binaries with different features may be used with the same installed drive code
 
 ; features, increase code size
 
 .define JUMP_TABLE                 1 ; add a jump table to the beginning of the DISKIO segment, useful when importing the binaries without symbols
 
-.define LOAD_UNDER_D000_DFFF       0 ; C-64 only: enable loading (and decompression) to the RAM at $D000-$DFFF, this slows down loading quite a bit.
+.define TWO_BITS_RESEND_OPTIMIZE   0 ; C-64 only: for the TWO_BITS_RESEND protocol, quicker loading by using a table,
+                                     ; but only 0 or 5..8 sprites are allowed outside IRQ handlers
+
+.define LOAD_UNDER_D000_DFFF       0 ; C-64 only: enable loading (and decompression) to the RAM at $D000-$DFFF,
                                      ; the IRQ handlers will need to change $01 to enable the I/O-RAM at $D000..$DFFF,
                                      ; so make sure the IRQ handlers restore the $01 status to the value as when they are called.
                                      ; the IRQs must run via $FFFE/F, since the ROM is disabled when accessing the RAM at $D000-$DFFF
@@ -155,10 +163,7 @@ FILESYSTEM                         = FILESYSTEMS::DIRECTORY_NAME; currently avai
                                      ; to be used for progress displays
 
 .define IDLE_BUS_LOCK              1 ; C-64 only: allow for arbitrary $DD00 writes ($00-$FF) when the loader
-                                     ; is idle (good for raster routines with LDA #value:STA $D018:STA $DD00, e.g.),
-                                     ; the writes must have a minimum distance of 15 µs (i.e., 15 cycles at 1 MHz).
-                                     ; however, if one of these $DD00 writes enables the ATN OUT bit
-                                     ; (bit 3 in $DD00), only one device on the bus is allowed for all protocols.
+                                     ; is idle (good for raster routines with LDA #value:STA $D018:STA $DD00, e.g.)
 
 .define NONBLOCKING_API            1 ; include non-blocking calls, so it is possible to run code in the main thread while timer NMIs are used
                                      ; to poll and download the blocks - the loader works in interrupt handlers instead of the main thread
@@ -233,10 +238,5 @@ DECOMPRESSOR                   = DECOMPRESSORS::EXOMIZER; available are NONE, BY
                                      ; after the raw uncompressed data;
                                      ; decreases combined loading + decompressing speed
                                      ; requires DECOMPRESSOR != DECOMPRESSORS::NONE, and SEPARATE_DECOMP = 0
-
-; parameters
-
-; INEFFECTIVE
-PROTOCOL = PROTOCOLS::TWO_BITS_ATN
 
 ; end ineffective assignments and defines

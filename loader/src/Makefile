@@ -35,7 +35,7 @@ CP           = cp
 MV           = mv
 RM           = rm -f
 MKDIR        = mkdir
-RMDIR        = rmdir --ignore-fail-on-non-empty
+RMDIR        = rmdir
 TOUCH        = touch
 
 AS           = ca65
@@ -61,7 +61,7 @@ INSTALLDIR   = install
 RESIDENTDIR  = resident
 
 BUILDDIR     = ../build
-INTERMDIR    = ../build/intermediate
+INTERMDIR    = ../build/interm
 
 ifneq ($(EXTCONFIGPATH),)
 CONFIG       = $(EXTCONFIGPATH)/loaderconfig.inc
@@ -149,7 +149,7 @@ $(INTERMDIR)/install-$(_PLATFORM_).o: $(INSTALLDEPS)
 # binary targets
  # drive-side binaries
 $(INTERMDIR)/drivecode.link: Makefile
-	$(PRINTF) "MEMORY \n{\n DRIVERAM: start = \$$00, size = \$$0800, file = \"../build/intermediate/drivecode1541.prg\";\n}\n\nSEGMENTS\n{\n CODE: load = DRIVERAM;\n}" > $@
+	$(PRINTF) "MEMORY \n{\n DRIVERAM: start = \$$00, size = \$$0800, file = \"$(INTERMDIR)/drivecode1541.prg\";\n}\n\nSEGMENTS\n{\n CODE: load = DRIVERAM;\n}" > $@
 
 $(INTERMDIR)/drivecode1541.o: $(CONFIG) $(DRIVESDIR)/drivecode1541.s $(DRIVESDIR)/drivecode1541-loadfile.s
 	$(AS) $(AS_FLAGS) -D STANDALONE=1 --cpu 6502X -o $@ $(DRIVESDIR)/drivecode1541.s

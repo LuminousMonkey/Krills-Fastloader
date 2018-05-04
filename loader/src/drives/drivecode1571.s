@@ -1,6 +1,8 @@
 
 .include "cpu.inc"
 .include "via.inc"
+.include "cia.inc"
+
 
 INITBUF_MAXTRK        = $02
 INITBUF_TRACK_DIFF    = $03
@@ -61,7 +63,7 @@ ROMOS_HEADER_ID1      = $17
 ROMOS_HEADER_TRACK    = $18
 ROMOS_HEADER_SECTOR   = $19
 ROMOS_TRACK_DIFF      = $42
-ROMOS_MAXTRK          = $02ac
+ROMOS_MAXTRACK        = $02ac
 
 DECGCRTAB10ZZZ432LO   = $9f0d
 DECGCRTAB3210ZZZ4LO   = $9f0f
@@ -100,7 +102,7 @@ LOAD_FILE_VALUE       = $7f
 .endif
 
 
-            .org $0028
+            .org $001e
 
 .if UNINSTALL_RUNS_DINSTALL
     .export drvcodebeg71 : absolute
@@ -108,7 +110,6 @@ LOAD_FILE_VALUE       = $7f
 .else
             .org * + $0a
 .endif; UNINSTALL_RUNS_DINSTALL
-
 
 .export c1570fix0 : absolute
 .export c1570fix1 : absolute
@@ -121,12 +122,12 @@ dcodinit:   lda #~MOTOR ; the motor is on with LOAD_ONCE because
             and VIA2_PRB; of the KERNAL file open operation
             sta VIA2_PRB; immediately before running this code
 
-            lda #T1_FREE_RUNNING | PA_LATCHING_ENABLE; watchdog irq: count phi2 pulses, 16-bit free-running,
+            lda #T1_FREE_RUNNING | PA_LATCHING_ENABLE; watchdog IRQ: count phi2 pulses, 16-bit free-running,
             sta VIA2_ACR                             ; port a latching should not be needed here
                                                      ; (IC rather than discrete logic),
                                                      ; but it is enabled just to be sure
-            lda #READ_MODE; BYTE_SYNC is disabled because this is not done via the v-flag here
-            sta VIA2_PCR  ; but rather using bit 7 of VIA1_PRA
+            lda #READ_MODE | BYTE_SYNC_ENABLE
+            sta VIA2_PCR
 
             ; before loading the first file, the current track number is
             ; retrieved by reading any block header on the disk -
@@ -149,12 +150,17 @@ c1570fix0:  bcs :+
 
             ; watchdog initialization
             lda #IRQ_CLEAR_FLAGS | IRQ_ALL_FLAGS
-            sta VIA1_IER; no irqs from via 1
-            sta VIA2_IER; no irqs from via 2
             sta DISKCHANGED
+            sta VIA1_IER; no IRQs from VIA 1
+            sta VIA2_IER; no IRQs from VIA 2
+            sta CIA_ICR; no IRQs from CIA
+            bit CIA_ICR
             lda #IRQ_SET_FLAGS | IRQ_TIMER_1
-            sta VIA2_IER; timer 1 irqs from via 2
-
+.if !DISABLE_WATCHDOG
+            sta VIA2_IER; timer 1 IRQs from VIA 2
+.else
+            bit VIA2_IER
+.endif
 .if UNINSTALL_RUNS_DINSTALL
             lda #.hibyte(drvcodebeg71 - $01)
             sta dgetputhi
@@ -175,6 +181,7 @@ c1570fix0:  bcs :+
 :           tay
             ; before spinning up the motor and finding the current track,
             ; wait until a file is requested to be loaded at all
+            jsr one_mhz
 :           jsr lightsub
             lda VIA1_PRB
             cmp #CLK_OUT | CLK_IN | DATA_IN | ATN_IN
@@ -326,8 +333,8 @@ chkheader:  cmp #%01010010; check if the sync is followed by a sector header
 
             ; read the sector header
             ldx #$06
-getheader:  bit VIA1_PRA
-            bmi getheader
+getheader:  bit VIA1_PRA ; check
+            bmi getheader; BYTEREADY
             lda VIA2_PRA
             sta GCRBUFFER + $00,x
             dex
@@ -346,8 +353,8 @@ getheader:  bit VIA1_PRA
             lda GCRBUFFER + $04
             jsr decodesub + $00
             cmp NUMSECTORS; check if sector number is within range of the allowed
-                          ; sector numbers for the current track
-            bcs readblock
+            bcs readblock ; sector numbers for the current track
+
             sta LOADEDSECTOR; store away the sector number, it is returned in the
                             ; x-register on success
             tax             ; current sector number
@@ -357,9 +364,12 @@ getheader:  bit VIA1_PRA
             cpx REQUESTEDSECTOR
             beq waitdatahd; branch if requested sector
 
-            bit REQUESTEDSECTOR
+            ; bit:bpl:bvc won't work because the v-flag
+            ; is unstable while the disk is spinning
+            ldy REQUESTEDSECTOR
             bmi waitdatahd; branch if ANYSECTOR or ANYSECTORSANELINK
-            bvc readblock ; branch if not UNPROCESSEDSECTOR
+            iny
+            bpl readblock ; branch if not UNPROCESSEDSECTOR
 
             ; no specific sector requested -
             ; out-of-order sector fetch
@@ -469,7 +479,7 @@ loaddata:   lda DECGCRTABXX43210XHI,x; x = [$00..$ff], %2222....
             beq :+
 scanswitch: jmp loaddata
                ; 49 cycles
-            
+
 :           bne :++; don't checksum if only the first few bytes have been
                    ; decoded for scanning
             lda DECGCRTABXX43210XHI,x; x = [$00..$ff], %2222....
@@ -807,9 +817,8 @@ beginload:
 
 .if !LOAD_ONCE ; not with LOAD_ONCE because then, there is no danger of getting stuck
                ; because there is no serial transfer to retrieve the file id
-            sec
-            ror VIA2_T1C_H; reset watchdog time-out, this also clears the possibly
-                          ; pending timer 1 irq flag
+            lda #$ff      ; reset watchdog time-out, this also clears the possibly
+            sta VIA2_T1C_H; pending timer 1 IRQ flag
             ENABLE_WATCHDOG; enable watchdog, the computer might be reset while sending over
                            ; a byte, leaving the drive waiting for handshake pulses
 
@@ -1204,7 +1213,7 @@ sendstatus: lda #$00
 .else
 :           ENABLE_WATCHDOG
 :           bit VIA1_PRB; check for ATN in to go high:
-            bpl :-; wait until the computer has acknowledged the file transfer
+            bpl :-      ; wait until the computer has acknowledged the file transfer
             sei; disable watchdog
             jmp driveidle
 .endif
@@ -1255,38 +1264,104 @@ sendblockl: ; loadfile code
 
             ; accu: block index or status byte
 sendblock:  sta BLOCKBUFFER + $00; block index or status byte
-            ldx #$ff
-            ldy #$20; here, the watchdog timer is polled manually because
+            ldx #$20; here, the watchdog timer is polled manually because
                     ; an extra-long time-out period is needed since the computer may
                     ; still be busy decompressing a large chunk of data;
                     ; this is the round counter
-            stx VIA2_T1C_H; reset watchdog time-out, this also clears the possibly
-                          ; pending timer 1 irq flag
+            ldy #$ff
+            sty VIA2_T1C_H; reset watchdog time-out, this also clears the possibly
+                          ; pending timer 1 IRQ flag
             lda #DATA_OUT
             sta VIA1_PRB; block ready signal
             ; a watchdog is used because the computer might be reset while sending
             ; over the block, leaving the drive waiting for handshake pulses
 waitready:  lda VIA2_T1C_H; see if the watchdog barked
             bne :+
-            dey           ; if yes, decrease the round counter
+            dex           ; if yes, decrease the round counter
     .if DISABLE_WATCHDOG
             beq nowatchdog
 nowatchdog:
     .else
             beq timeout; and trigger watchdog on time-out
     .endif
-            stx VIA2_T1C_H; reset watchdog time-out and clear irq flag
+            sty VIA2_T1C_H; reset watchdog time-out and clear IRQ flag
 :           bit VIA1_PRB
             bpl waitready; wait for ATN in = high
-            stx VIA2_T1C_H; reset watchdog time-out and clear possibly set irq flag; reset watchdog time-out
-timeout:    ENABLE_WATCHDOG
 
-            ldy #$00
-sendloop:
-.if !DISABLE_WATCHDOG
+            sty VIA2_T1C_H; reset watchdog time-out and clear possibly set IRQ flag; reset watchdog time-out
+timeout:    ENABLE_WATCHDOG
+            iny; ldy #$00
+
+.if ::PROTOCOL = PROTOCOLS::TWO_BITS_RESEND
+
+			beq sendloop; jmp
+resend:     stx VIA1_PRB            ; 4
+            dey                     ; 2
+:           bit VIA1_PRB            ; 4 - sync: wait for ATN high
+            bpl :-                  ; 3
+
+sendloop:   lda BLOCKBUFFER,y       ; 4
+            and #BINARY_NIBBLE_MASK ; 2
+            tax                     ; 2
+            lda SENDNIBBLETAB,x     ; 4
+:           bit VIA1_PRB            ; 4 - sync: wait for ATN low
+            bmi :-                  ; 3
+			nop                     ; 2
+			nop                     ; 2
+			bit $24                 ; 3
+            sta VIA1_PRB            ; 4
+                                    ; = 35
+
+            asl                     ; 2
+            and #~ATNA_OUT          ; 2
+            tax                     ; 2
+            lda BLOCKBUFFER,y       ; 4
+            lsr                     ; 2
+            stx VIA1_PRB            ; 4
+			                        ; = 16
+
+            lsr                     ; 2
+            lsr                     ; 2
+            lsr                     ; 2
+            tax                     ; 2
+            lda SENDNIBBLETAB,x     ; 4
+            sta VIA1_PRB            ; 4
+			                        ; = 16
+
+            nop                     ; 2
+            nop                     ; 2
+            nop                     ; 2
+            nop                     ; 2
+            asl                     ; 2
+            and #~ATNA_OUT          ; 2
+            sta VIA1_PRB            ; 4
+                                    ; = 16
+
+            nop                     ; 2
+            nop                     ; 2
+            nop                     ; 2
+            nop                     ; 2
+            nop                     ; 2
+            nop                     ; 2
+            lda #DATA_OUT           ; 2
+            sta VIA1_PRB            ; 4
             lda #$ff                ; 2
-            sta VIA2_T1C_H          ; 4 ; reset watchdog time-out
-.endif
+            sta VIA2_T1C_H          ; 4 - reset watchdog time-out
+            ldx #CLK_OUT            ; 2
+dsendcmp:   cpy #$00                ; 2
+            iny                     ; 2
+            bit VIA1_PRB            ; 4
+            bpl resend              ; 2
+            bcc sendloop            ; 3
+                                    ; = 119
+
+.else; ::PROTOCOL != PROTOCOLS::TWO_BITS_RESEND
+
+sendloop:
+    .if !DISABLE_WATCHDOG
+            lda #$ff                ; 2
+            sta VIA2_T1C_H          ; 4 - reset watchdog time-out
+    .endif
             lda BLOCKBUFFER,y       ; 4
             and #BINARY_NIBBLE_MASK ; 2
             tax                     ; 2
@@ -1327,8 +1402,10 @@ dsendcmp:   cpy #$00                ; 2
             bcc sendloop            ; 3
                                     ; = 95
 
+.endif; ::PROTOCOL != PROTOCOLS::TWO_BITS_RESEND
+
 :           bit VIA1_PRB; wait for acknowledgement
-            bmi :-      ; of the last data bit pair
+            bmi :-      ; of the last data byte
 
             dec SECTORCOUNT
             bne drivebusy71; pull DATA_OUT high when changing tracks
@@ -1351,8 +1428,9 @@ drivebusy71:
             rts
 
             ; must not trash x
-dgetbyte:   lda #%10000000; CLK OUT lo: drive is ready
+dgetbyte:   lda #$ff
             sta VIA2_T1C_H; reset watchdog time-out
+            lda #%10000000; CLK OUT lo: drive is ready
             sta VIA1_PRB
             ldy #DATA_OUT | DATA_IN
 :           cpy VIA1_PRB
@@ -1400,7 +1478,7 @@ DRVCODE71END = *
 .endif
             ; entry point
 
-dinstall:   lda ROMOS_MAXTRK
+dinstall:   lda ROMOS_MAXTRACK
 reinstall:  sei
             sta INITBUF_MAXTRK
             lda ROMOS_TRACK_DIFF

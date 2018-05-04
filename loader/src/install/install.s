@@ -16,13 +16,14 @@ __NO_LOADER_SYMBOLS_IMPORT = 1
 .endif
 
 ; including via.inc would redefine several symbols from cia.inc
-VIA2_T1L_H = $1c07; this symbol is used for the fast head stepping m-w for seeking using plain KERNAL routines
+VIA2_T1L_H = $1c07; this symbol is used for the fast head stepping M-W for seeking using plain KERNAL routines
 VIA_T1C_H  = $1c05; this symbol is used for watchdog servicing on CMD FD
 
 
 .include "hal/hal.inc"
 
 .importzp BLOCKDESTLO
+
 
 .import c1570fix0
 .import c1570fix1
@@ -31,8 +32,10 @@ VIA_T1C_H  = $1c05; this symbol is used for watchdog servicing on CMD FD
 .import cmdfdfix0
 .import cmdfdfix1
 .import cmdfdfix2
+.if !DISABLE_WATCHDOG
 .import cmdfdfix3
 .import cmdfdfix4
+.endif
 
 
 USE_GENERIC_DRIVE = 0
@@ -154,6 +157,7 @@ install:
 
 :           php; i-flag buffer
 
+            INIT_PAL_NTSC
             INIT_KERNAL_SERIAL_ROUTINES
 
             ; try the drive as denoted by FA (current drive) first
@@ -191,7 +195,8 @@ checkbus:   stx FA
             jsr UNLSTN
 
     .if LOAD_ONCE & LOAD_VIA_KERNAL_FALLBACK
-            jsr openfile; using load via KERNAL fallback, the loader can still load
+            ; using load via KERNAL fallback, the loader can still load
+            jsr openfile; exception on error
     .endif
     
             plp; i-flag restore
@@ -211,7 +216,8 @@ nodrive:    jsr UNLSTN
             inx
             cpx #MAX_DEVICE_NO + 1
             bne checkbus
-.endif; PROTOCOL <> PROTOCOLS::TWO_BITS_ATN
+
+.endif; PROTOCOL = PROTOCOLS::TWO_BITS_ATN
 
             ; find first available drive,
             ; this is done via the high-level open/read/close routines,
@@ -221,7 +227,8 @@ nodrive:    jsr UNLSTN
             pla; current drive
 .if PROTOCOL = PROTOCOLS::TWO_BITS_ATN
             and #%01111111; clear (more-than)-one-drive flag
-.endif; PROTOCOL <> PROTOCOLS::TWO_BITS_ATN
+.endif; PROTOCOL = PROTOCOLS::TWO_BITS_ATN
+
             ; find first available drive
             sta FA
 find1stdrv: pha; device number
@@ -303,15 +310,30 @@ drivefound: ; read error channel to stop potentially blinking error LED
     .if USE_GENERIC_DRIVE
             jmp usegeneric
     .endif
+
+            ; drive allows code upload and execution,
             ; check which model the drive is and upload corresponding drive code
 
+.ifdef cbm1541::CX500
+            lda #.lobyte($fbaa)
+            ldx #.hibyte($fbaa)
+            jsr memreadbyt
+            cmp #'C'
+            bne :+
+            cpx #'x'
+            bne :+
+            jmp is1541
+:
+.endif
             ; check if running on a 1541/70/71 compatible drive
             lda #.lobyte($e5c6)
             ldx #.hibyte($e5c6)
             jsr memreadbyt
 
+.ifndef cbm1541::CX500
             cmp #'4'
             beq is1541
+.endif
             cmp #'7'
             beq is157x
 
@@ -336,8 +358,11 @@ drivefound: ; read error channel to stop potentially blinking error LED
             cmp #'4'
             bne isfd2000
             iny; diskio::drivetype::DRIVE_CMD_FD_4000
-isfd2000:   lda #$ff
+isfd2000:   
+    .if !DISABLE_WATCHDOG
+            lda #$ff
             ldx #.lobyte(VIA_T1C_H)
+    .endif
             bne iscmdfd; jmp
 
             ; check if 1581
@@ -371,28 +396,35 @@ usegeneric: ; no compatible drive found
             ; select appropriate drive code
 
 is1541:     ; find out if 1541, or 1541-C/1541-II
-            lda #.lobyte($eaa3); is $fe only with 1541-C,
-            ldx #.hibyte($eaa3); where it defines the data direction for
-            jsr memreadbyt     ; the pin connected to the track 0 sensor
-            ldy #diskio::drivetype::DRIVE_1541_C
-            cmp #$fe
-            beq selectdcod; branch if 1541-C
-            ; 1541 or 1541-II
             lda #.lobyte($c002)
             ldx #.hibyte($c002)
             jsr memreadbyt
             ldy #diskio::drivetype::DRIVE_1541
             cmp #'c'
             bne selectdcod; 1541: branch if no 'c' at $c002 (from 'COPYRIGHT' etc.)
-            ldy #diskio::drivetype::DRIVE_1541_II
-            bne selectdcod; jmp; 1541-II: 'c' at $c002 (from 'COPYRIGHT' etc.)
+            lda #.lobyte($e5b7)
+            ldx #.hibyte($e5b7)
+            jsr memreadbyt
+            tax
+            lda #$ff
+            cpx #'c' | $80; 'CBM DOS' etc.
+            bne :+; treat as 1541-II if no match, so as not to detect SpeedDOS etc. as 1541-C but 1541-II instead
+            ; find out if 1541-C or 1541-II
+            lda #.lobyte($eaa3)
+            ldx #.hibyte($eaa3)
+            jsr memreadbyt
+:           ldy #diskio::drivetype::DRIVE_1541_C
+            cmp #$ff
+            bne selectdcod; 1541-C: no $ff at $eaa3 (but likely $fe, data direction for track 0 sensor bit)
+            iny; diskio::drivetype::DRIVE_1541_II
+            bne selectdcod; jmp; 1541-II: $ff at $eaa3
 
             ; find out if 1570 or 1571
 is157x:     cpx #'1' | $80; 71
             lda #OPC_BIT_ZP
             ldx #OPC_BIT_ABS; no VIA2_PRA writes to switch sides
             ldy #diskio::drivetype::DRIVE_1570
-            bcc :+; branch if 1570
+            bcc :+
             ; 1571 or 1571CR
             jsr chk2sidedx
             lda #.lobyte($e5c2)
@@ -416,10 +448,14 @@ is1581:     lda #OPC_JMP_ABS
             sta cmdfdfix1 - cbm1581::drvcodebeg81 + cbm1581::drivecode81
             lda #.hibyte($022b); DIRTRACK81
             sta cmdfdfix2 - cbm1581::drvcodebeg81 + cbm1581::drivecode81
+     .if !DISABLE_WATCHDOG
             lda #COUNT_TA_UNDF | FORCE_LOAD | ONE_SHOT | TIMER_START
             ldx #.lobyte(CIA_CRB)
 iscmdfd:    sta cmdfdfix3 - cbm1581::drvcodebeg81 + cbm1581::drivecode81
             stx cmdfdfix4 - cbm1581::drvcodebeg81 + cbm1581::drivecode81
+    .else
+iscmdfd:
+    .endif
 
 
 selectdcod: sty drivetype
@@ -446,7 +482,7 @@ selectdcod: sty drivetype
 
             cpy #diskio::drivetype::DRIVE_1581
             bcs :++
-            ; quicker head stepping on 1541-71
+            ; quicker head stepping on 1541/71
             jsr drvlistn
             ldx #$06
 :           lda drvfaststp,x
@@ -790,9 +826,11 @@ dcodeselt8: .byte .lobyte(cbm1541::dinstall)
 
 version:    .byte "Krill's Loader, version ", REPOSITORY_VERSION, ", configuration "
             itoa4 MIN_DEVICE_NO
-            itoa4 MAX_DEVICE_NO
+            itoa8 MAX_DEVICE_NO
             .byte '.'
             itoa8 PLATFORM
+            .byte '.'
+            itoa4 PROTOCOL
             .byte '.'
             itoa4 FILESYSTEM
             .byte '.'
@@ -847,8 +885,6 @@ version:    .byte "Krill's Loader, version ", REPOSITORY_VERSION, ", configurati
            ;itoa1 CUSTOM_DRIVE_CODE_API
            ;.byte '.'
            ;itoa1 NO_DECOMPLOAD_OPTIMIZATION
-           ;.byte '.'
-           ;itoa4 PROTOCOL
            ;.byte '.'
            ;itoa16 STREAM_BUFFERSIZE
             .byte 0

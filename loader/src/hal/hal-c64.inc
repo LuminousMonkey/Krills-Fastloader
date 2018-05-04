@@ -15,6 +15,17 @@ _HAL_C64_INC_ = 1
 .endif
 
 
+.macro INIT_PAL_NTSC
+            .local ntsc
+
+            lda CIA1_CRA
+            and #~TOD_FREQ_MASK
+            ldx PAL_NTSC
+            beq ntsc
+            ora #TOD_FREQ_50HZ
+ntsc:       sta CIA1_CRA
+.endmacro
+
 .macro INIT_KERNAL_SERIAL_ROUTINES
             ; nothing to do
 .endmacro
@@ -88,19 +99,22 @@ _HAL_C64_INC_ = 1
                                                                                                                                    ; effectively, this is
                                                                                                                                    ; the KERNAL flag:
                                                                                                                                    ; 0 = input  = loader,
-        ; DATA OUT, CLK OUT, ATN out are low; RS232 is low                                                                         ; 1 = output = KERNAL
-        CIA2_DDRA_KERNAL   = CIA2_DDRA_COMMON | CIA_SERIAL_DATA_OUT_OUTPUT | CIA_SERIAL_CLK_OUT_OUTPUT | CIA_SERIAL_ATN_OUT_OUTPUT | CIA_RS232_OUTPUT; $3f
+        ; DATA OUT, CLK OUT, ATN out are low; RS232_TXD is low                                                                     ; 1 = output = KERNAL
+        CIA2_DDRA_KERNAL   = CIA2_DDRA_COMMON | CIA_SERIAL_DATA_OUT_OUTPUT | CIA_SERIAL_CLK_OUT_OUTPUT | CIA_SERIAL_ATN_OUT_OUTPUT | CIA_RS232_TXD_OUTPUT; $3f
 
-        ; DATA OUT, CLK OUT, ATN OUT are high; RS232 is high; all bits except bank bits are inputs so that $dd00 writes do not change the bus state
-        CIA2_DDRA_IDLE     = CIA2_DDRA_COMMON | CIA_SERIAL_DATA_OUT_INPUT  | CIA_SERIAL_CLK_OUT_INPUT  | CIA_SERIAL_ATN_OUT_INPUT  | CIA_RS232_INPUT ; $03
+        ; DATA OUT, CLK OUT, ATN OUT are high; RS232_TXD is input; all bits except bank bits are inputs so that $DD00 writes do not change the bus state
+        CIA2_DDRA_IDLE     = CIA2_DDRA_COMMON | CIA_SERIAL_DATA_OUT_INPUT  | CIA_SERIAL_CLK_OUT_INPUT  | CIA_SERIAL_ATN_OUT_INPUT  | CIA_RS232_TXD_INPUT ; $03
 
-        ; DATA OUT is high, CLK OUT, ATN out are low; RS232 is high
-        CIA2_DDRA_WAKEUP   = CIA2_DDRA_COMMON | CIA_SERIAL_DATA_OUT_INPUT  | CIA_SERIAL_CLK_OUT_OUTPUT | CIA_SERIAL_ATN_OUT_OUTPUT | CIA_RS232_INPUT ; $1b
+        ; DATA OUT is high, CLK OUT, ATN out are low; RS232_TXD is input
+        CIA2_DDRA_WAKEUP   = CIA2_DDRA_COMMON | CIA_SERIAL_DATA_OUT_INPUT  | CIA_SERIAL_CLK_OUT_OUTPUT | CIA_SERIAL_ATN_OUT_OUTPUT | CIA_RS232_TXD_INPUT ; $1b
+
+        ; DATA OUT, CLK OUT, ATN out are low; RS232_TXD is input
+        CIA2_DDRA_OPERATE  = CIA2_DDRA_COMMON | CIA_SERIAL_DATA_OUT_OUTPUT | CIA_SERIAL_CLK_OUT_OUTPUT | CIA_SERIAL_ATN_OUT_OUTPUT | CIA_RS232_TXD_INPUT ; $3b
     .endif; !CIA2_DDRA_COMMON
 
-    CLOCK                  = CIA2_DDRA_COMMON | CIA_SERIAL_DATA_OUT_OUTPUT | CIA_SERIAL_CLK_OUT_OUTPUT
-    CLOCK_ATN_HI           = CLOCK | CIA_SERIAL_ATN_OUT_INPUT  | CIA_RS232_INPUT; 1st and 3rd bit pairs ; $33
-    CLOCK_ATN_LO           = CLOCK | CIA_SERIAL_ATN_OUT_OUTPUT | CIA_RS232_INPUT; 2nd and 4th bit pairs ; $3b
+    CLOCK                  = CIA2_DDRA_COMMON | CIA_SERIAL_DATA_OUT_OUTPUT | CIA_SERIAL_CLK_OUT_OUTPUT | CIA_RS232_TXD_OUTPUT; $37
+    CLOCK_ATN_HI           = CLOCK | CIA_SERIAL_ATN_OUT_INPUT ; 1st and 3rd bit pairs; $37
+    CLOCK_ATN_LO           = CLOCK | CIA_SERIAL_ATN_OUT_OUTPUT; 2nd and 4th bit pairs; $3f
 
     .macro ENABLE_WAITBUSY_KERNAL
             lda #~CIA_SERIAL_CLK_OUT_OUTPUT
@@ -114,13 +128,13 @@ _HAL_C64_INC_ = 1
     .macro INIT_CLEAR_DATA_OUT_CLEAR_CLK_OUT_CLEAR_ATN_OUT
             ; this is executed during install and openfile if IDLE_BUS_LOCK != 0
             ; hence it accesses the port register rather than the data direction register
-            lda #(~CIA_SERIAL_DATA_OUT_OUTPUT) & (~CIA_SERIAL_CLK_OUT_OUTPUT) & (~CIA_SERIAL_ATN_OUT_OUTPUT)
+            lda #~(SERIAL_DATA_OUT | SERIAL_CLK_OUT | SERIAL_ATN_OUT | RS232_TXD)
             and CIA2_PRA
             sta CIA2_PRA
     .endmacro
 
     .macro CLEAR_DATA_OUT_CLEAR_CLK_OUT_CLEAR_ATN_OUT
-            lda #CLOCK_ATN_LO
+            lda #CIA2_DDRA_OPERATE
             sta CIA2_DDRA
     .endmacro
 
@@ -234,7 +248,7 @@ bitset:     eor #CIA_SERIAL_CLK_OUT_OUTPUT
     .macro WAKEUP
         .if IDLE_BUS_LOCK
             ; when the loader is idle, the user is
-            ; allowed to write anything to CIA2_DDRA ($dd00) -
+            ; allowed to write anything to CIA2_DDRA ($DD00) -
             ; set it to a known and valid state here
             INIT_CLEAR_DATA_OUT_CLEAR_CLK_OUT_CLEAR_ATN_OUT
         .endif
@@ -242,43 +256,138 @@ bitset:     eor #CIA_SERIAL_CLK_OUT_OUTPUT
             sty CIA2_DDRA
     .endmacro
 
-    .macro PREPARE_ATN_STROBE
+    .macro PREPARE_SEND_BLOCK_SIGNAL
             ldx #CLOCK_ATN_HI
     .endmacro
 
-    .macro BEGIN_ATN_STROBE
+    .macro BEGIN_SEND_BLOCK_SIGNAL
             stx CIA2_DDRA
     .endmacro
 
-    .macro END_ATN_STROBE
-            lda #CLOCK_ATN_LO
-            sta CIA2_DDRA - CLOCK_ATN_HI,x
+    .macro END_SEND_BLOCK_SIGNAL
+        .if PROTOCOL = PROTOCOLS::TWO_BITS_RESEND
+            ldx #$04
+:           dex
+            bne :-
+        .else
+            lda #CIA2_DDRA_OPERATE
+            sta CIA2_DDRA - CLOCK_ATN_HI,x; x-indexed for delay
+        .endif
     .endmacro
 
-    .macro GETBYTE
+    .macro TRANSFER_TABLE
+        .if (PROTOCOL = PROTOCOLS::TWO_BITS_RESEND) & TWO_BITS_RESEND_OPTIMIZE
+andc0table: .res 64, $00
+            .res 64, $40
+            .res 64, $80
+            .res  8, $c0; index bits 3..5 are always 0
+
+            .ifndef DYNLINK_EXPORT
+            .assert .hibyte(* - 1) = .hibyte(andc0table), warning, "***** Performance warning: Page boundary crossing (andc0table). Please relocate the DISKIO segment. *****"
+            .endif
+        .endif        
+    .endmacro
+
+    .if PROTOCOL = PROTOCOLS::TWO_BITS_RESEND
+        GETBYTE_SETS_VALUE_FLAGS = 0
+    .else
+        GETBYTE_SETS_VALUE_FLAGS = 1
+    .endif
+
+    .macro GETBYTE_TWO_BITS_RESEND_SETUP
+            .local ntsc
+
+            lda #OPC_STA_ABSX
+            bit CIA1_CRA
+            bpl ntsc
+            lda #OPC_STA_ABS
+ntsc:       sta gbypalntsc
+.if LOAD_UNDER_D000_DFFF
+            sta gbypalntsc2
+.endif
+    .endmacro
+
+    .macro GETBYTE_TWO_BITS_RESEND
+            .local getbyte
+            .local getbytybuf
+
+getbyte:    ldx #CLOCK_ATN_LO
+            stx CIA2_DDRA; deassert ATN to start byte transfer
+            ldx #$00
+            tya
+.ifdef gbypalntsc
+gbypalntsc2:
+.else
+gbypalntsc:
+.endif
+            sta getbytybuf + $01; is changed to sta,x for NTSC compatibility
+            ldy #CLOCK_ATN_HI
+            ; = 16
+
+            lda CIA2_PRA
+            lsr
+            lsr
+            ora CIA2_PRA
+            lsr
+            lsr
+            ora CIA2_PRA
+            lsr
+            lsr
+            ldx CIA2_PRA
+            ; = 28
+
+        .if TWO_BITS_RESEND_OPTIMIZE
+            sty CIA2_DDRA
+getbytybuf: ldy #$00
+            ora andc0table,x
+            bit CIA2_PRA; detect time-out
+            bvc getbyte
+            ; = 16
+            ; = 60 + 10 (sta,y iny bne) = 70
+        .else
+            sta :+ + $01 - CLOCK_ATN_HI,y
+            sty CIA2_DDRA
+getbytybuf: ldy #$00
+            txa
+            and #%11000000
+:           ora #$00
+            tax
+            bit OPC_BIT_ZP
+            bit CIA2_PRA; detect time-out
+            bvc getbyte
+            ; = 28
+            ; = 72 + 10 (sta,y iny bne) = 82
+        .endif
+    .endmacro
+
+    .macro GETBYTE_TWO_BITS_ATN_SETUP
+            ; nothing to do
+    .endmacro
+
+    .macro GETBYTE_TWO_BITS_ATN
             ; note: between each store to CIA2_DDRA to signal ready for the next bit pair,
             ;       10 cycles must pass before read access of CIA2_PRA:
             ;       the drive needs max. 14 cycles to respond -
             ;       this means 18 cycles per bit pair are minimum
 
             ldx #CLOCK_ATN_HI                   ; 2
-            lda CIA2_PRA                        ; 4 - 10...X..
+            lda CIA2_PRA - CLOCK_ATN_HI,x       ; 5 - 10...... + delay
             stx CIA2_DDRA; sync 1: set ATN high ; 4
-                                                ; = 22 (19 on drive), 3 too many
+                                                ; = 23 (19 on drive), 4 too many
 
-            lsr                                 ; 2 - .10...X.
-            lsr                                 ; 2 - ..10...X
+            lsr                                 ; 2 - .10.....
+            lsr                                 ; 2 - ..10....
             nop                                 ; 2 - delay
             nop                                 ; 2 - delay
             ldx #CLOCK_ATN_LO                   ; 2
-            ora CIA2_PRA - CLOCK_ATN_LO,x       ; 5 - 3210...X + delay
+            ora CIA2_PRA - CLOCK_ATN_LO,x       ; 5 - 3210.... + delay
             stx CIA2_DDRA; sync 2: set ATN low  ; 4
                                                 ; = 19 (19 on drive), 1 more than the theoretical limit
 
             lsr                                 ; 2 - .3210...
             lsr                                 ; 2 - ..3210..
             nop                                 ; 2 - delay
-            eor #RS232_OUT                      ; 2 - ..321O.., KERNAL flag, is read as 1 in non-KERNAL mode
+            nop                                 ; 2 - ..321O..
             ldx #CLOCK_ATN_HI                   ; 2
             eor CIA2_PRA - CLOCK_ATN_HI,x       ; 5 - 543210.. + delay
             stx CIA2_DDRA; sync 3: set ATN high ; 4
@@ -288,7 +397,7 @@ bitset:     eor #CIA_SERIAL_CLK_OUT_OUTPUT
             lsr                                 ; 2 - ..543210
             sta :+ + $01                        ; 4
             lda #SERIAL_DATA_IN | SERIAL_CLK_IN ; 2 - mask
-            ldx #CLOCK_ATN_LO                   ; 2
+            ldx #CIA2_DDRA_OPERATE              ; 2
             and CIA2_PRA                        ; 4 - 76......
             stx CIA2_DDRA; sync 4: set ATN low  ; 4
                                                 ; = 20 (22 on drive), 2 too few
@@ -296,11 +405,21 @@ bitset:     eor #CIA_SERIAL_CLK_OUT_OUTPUT
 :           ora #$00; this is done to make sure ; 2 - 76543210
                     ; the VIC bank currently    ;
                     ; active is irrelevant      : + 10 - store + loop (sta,y iny bne)
-                                                ; = 80 (79 on drive), 8 more than the theoretical lower limit
+                                                ; = 81 (79 on drive), 9 more than the theoretical lower limit
+    .endmacro
+
+    .macro STOREBYTE_ALLRAM
+            ENABLE_ALL_RAM_X
+storebytio: sta a:$00,y
+memconfig:  ldx #$00
+            SET_MEMCONFIG_X
     .endmacro
 
     .macro ENDGETBLOCK
-            ; nothing to do
+        .if PROTOCOL = PROTOCOLS::TWO_BITS_RESEND
+            ldx #CIA2_DDRA_OPERATE
+            stx CIA2_DDRA
+        .endif
     .endmacro
 
     .macro SET_IO_KERNAL
@@ -313,9 +432,10 @@ bitset:     eor #CIA_SERIAL_CLK_OUT_OUTPUT
 .macro SETUP_TIMER
             .local ntsc
 
-            ; time-out granularity is 8 scanlines XXX TODO NTSC: user-supplied flag or check?
-            ;lda #.lobyte(CYCLES_PER_LINE_NTSC * 8 - 1)
-            ;bcs ntsc
+            ; time-out granularity is 8 scanlines
+            lda #.lobyte(CYCLES_PER_LINE_NTSC * 8 - 1); XXX TODO: NTSC has 263 lines, which is not divisible by 8 (but 264 is), so the timer must be rectified each frame
+            bit CIA1_CRA
+            bpl ntsc
             lda #.lobyte(CYCLES_PER_LINE_PAL * 8 - 1)
 ntsc:       sta CIA2_TA_LO
             lda #.hibyte(CYCLES_PER_LINE_PAL * 8 - 1)
