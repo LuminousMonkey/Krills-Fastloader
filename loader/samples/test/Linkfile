@@ -25,7 +25,7 @@ SEGMENTS
 
     VERIFYBUFFER:   load = RAM2,  type = bss, start = $8000, optional = yes, define = yes;
 
-    BITMAPHI:       load = RAM2,  type = bss, start = $c000, optional = yes, define = yes;
+    BITMAPHI:       load = RAM2,  type = bss, start = $c000, optional = yes, define = yes; # also location of IEEE-488 KERNAL extensions with SFD-1001
     COLRAMHI:       load = RAM2,  type = bss, start = $f000, optional = yes, define = yes; # not used on Plus/4
 
     # these three segments must be defined in the application's link file

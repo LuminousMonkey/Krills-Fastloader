@@ -95,6 +95,12 @@ CLOCK_ATN_HI           = CLOCK |      IO_PORT_SERIAL_ATN_OUT ; 1st and 3rd bit p
 CLOCK_ATN_LO           = CLOCK | (0 & IO_PORT_SERIAL_ATN_OUT); 2nd and 4th bit pairs
 
 
+.macro ENABLE_WAITBUSY_KERNAL
+            lda #~IO_PORT_SERIAL_CLK_OUT
+            and IO_PORT
+            sta IO_PORT
+.endmacro
+
 .macro INIT_CLEAR_DATA_OUT_CLEAR_CLK_OUT_CLEAR_ATN_OUT
             lda #IO_PORT_CST_MTR | (0 & IO_PORT_SERIAL_DATA_OUT) | (0 & IO_PORT_SERIAL_CLK_OUT) | (0 & IO_PORT_SERIAL_ATN_OUT); $08
             sta IO_PORT

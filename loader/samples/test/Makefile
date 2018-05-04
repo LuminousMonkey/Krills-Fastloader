@@ -92,13 +92,18 @@ else
 EMU41          = $(VICE) -drive8type 1541 -drive9type $(DRIVE9TYPE) -autostart
 EMU51          = $(VICE) -drive8type 1551 -drive9type $(DRIVE9TYPE) -autostart # C-16 only
 endif
+# the following mode is only supported by VICE and YAPE
+EMU81          = $(VICE) -drive8type 1581 -drive9type $(DRIVE9TYPE) -autostart
 # the following modes are only supported by VICE
 EMU42          = $(VICE) -drive8type 1542 -drive9type $(DRIVE9TYPE) -autostart # 1541-II
 EMU70          = $(VICE) -drive8type 1570 -drive9type $(DRIVE9TYPE) -autostart
 EMU71          = $(VICE) -drive8type 1571 -drive9type $(DRIVE9TYPE) -autostart
+EMU7141        = $(VICE) -drive8type 1571 -drive9type $(DRIVE9TYPE) -autostart # 1571 with .d64
 EMU73          = $(VICE128) -drive8type 1573 -drive9type 0 -autostart # 1571CR
-EMU81          = $(VICE) -drive8type 1581 -drive9type $(DRIVE9TYPE) -autostart
-
+EMU7341        = $(VICE128) -drive8type 1573 -drive9type 0 -autostart # 1571CR with .d64
+EMU2000        = $(VICE) -drive8type 2000 -drive9type 0 -autostart
+EMU4000        = $(VICE) -drive8type 4000 -drive9type 0 -autostart
+EMU1001        = $(VICE) -drive8type 1001 -drive9type $(DRIVE9TYPE) -autostart
 
 ifneq ($(USE_PLUS4EMU),0)
 EMU941         = $(PLUS4EMU) floppy.a.driveType=0 floppy.b.driveType=0 -disk
@@ -111,9 +116,21 @@ endif
 EMU942         = $(VICE) -drive8type 1542 -drive9type 1541 -autostart # 1541-II
 EMU970         = $(VICE) -drive8type 1570 -drive9type 1541 -autostart
 EMU971         = $(VICE) -drive8type 1571 -drive9type 1541 -autostart
+EMU97141       = $(VICE) -drive8type 1571 -drive9type 1541 -autostart # 1571 with .d64
 EMU973         = $(VICE128) -drive8type 1573 -drive9type 1541 -autostart # 1571CR
+EMU97341       = $(VICE128) -drive8type 1573 -drive9type 1541 -autostart # 1571CR with .d64
 EMU981         = $(VICE) -drive8type 1581 -drive9type 1541 -autostart
+EMU92000       = $(VICE) -drive8type 2000 -drive9type 1541 -autostart
+EMU94000       = $(VICE) -drive8type 4000 -drive9type 1541 -autostart
+EMU91001       = $(VICE) -drive8type 1001 -drive9type 1541 -autostart
 
+
+SVNVERSION     = svnversion
+ifneq ($(wildcard ../../.svn/format),)
+VERSION        = $(shell $(SVNVERSION) | tr -d [:cntrl:])
+else
+VERSION        =
+endif
 
 ECHO           = echo
 PRINTF         = printf
@@ -155,7 +172,7 @@ else ifeq ($(ARCH),MACOSX)
 DOSBOX         = /Applications/DOSBox.app/Contents/MacOS/DOSBox
 LC             = ..\..\tools\crush $(LCSPEED)
 else
-    # default: use wine to run the CRUSH.EXE
+    # default: use wine to run CRUSH.EXE
 LC             = wine ../../tools/crush $(LCSPEED) # XXX TODO try dosemu
 endif
 LCSPEED        = 6
@@ -241,19 +258,13 @@ $(INTERMDIR)/kernelsymbols1541.inc: $(LOADER)/drives/drivecode1541.s $(LOADER)/d
 	$(MAKE) -C $(LOADER) ../build/intermediate/kernelsymbols1541.inc # no usage of $(INTERMDIR) to match the path as seen from loader/src
 
 
-.svn/entries:
-	$(MKDIR) ./.svn
+../../.svn/entries:
+ifeq ($(VERSION),)
+	$(MKDIR) ../../.svn
 	$(TOUCH) $@
+endif
 
-../.svn/entries:
-	$(MKDIR) ../.svn
-	$(TOUCH) $@
-
-$(LOADER)/.svn/entries:
-	$(MKDIR) $(LOADER)/.svn
-	$(TOUCH) $@
-
-../../version.inc: ../.svn/entries .svn/entries $(LOADER)/.svn/entries
+../../version.inc: ../../.svn/entries
 	$(MAKE) -C ../.. version.inc
 
 
@@ -485,8 +496,8 @@ $(BUILDDIR)/loadertest-$(_PLATFORM_).d71: $(DISKIMAGEDEPS)
 # CL-BOTHGFXHI.LCCONV $23,$26
 # CE-BOTHGFXHI.EXO    $2d,$0a
 
-$(BUILDDIR)/loadertest-$(_PLATFORM_).d81: $(DISKIMAGEDEPS)
-	$(C1541) -format "normal is boring,+h" d81 $@
+$(BUILDDIR)/loadertest-$(_PLATFORM_).d81 $(BUILDDIR)/loadertest-$(_PLATFORM_).d82: $(DISKIMAGEDEPS)
+	$(C1541) -format "normal is boring,+h" $(subst .,,$(suffix $@)) $@
 	$(C1541) -attach $@ \
 	 -write $(INTERMDIR)/sheba.bin              "sb-sheba.bin" \
 	 -write $(INTERMDIR)/sheba.pu               "sp-sheba.pu" \
@@ -546,8 +557,14 @@ run70: $(BUILDDIR)/loadertest-$(_PLATFORM_).d64
 run71: $(BUILDDIR)/loadertest-$(_PLATFORM_).d71
 	$(EMU71) $^
 
+run7141: $(BUILDDIR)/loadertest-$(_PLATFORM_).d64
+	$(EMU7141) $^
+
 run73: $(BUILDDIR)/loadertest-$(_PLATFORM_).d71
 	$(EMU73) $^
+
+run7341: $(BUILDDIR)/loadertest-$(_PLATFORM_).d64
+	$(EMU7341) $^
 
 ifneq ($(USE_YAPE),0)
 run81: $(BUILDDIR)/loadertest-$(_PLATFORM_).d81
@@ -557,6 +574,14 @@ run81: $(BUILDDIR)/loadertest-$(_PLATFORM_).d81
 	$(EMU81) "$^:loader test"
 endif
 
+run2000: $(BUILDDIR)/loadertest-$(_PLATFORM_).d81
+	$(EMU2000) "$^:loader test"
+
+run4000: $(BUILDDIR)/loadertest-$(_PLATFORM_).d81
+	$(EMU4000) "$^:loader test"
+
+run1001: $(BUILDDIR)/loadertest-$(_PLATFORM_).d82
+	$(EMU1001) "$^:loader test"
 
 ifneq ($(USE_YAPE),0)
 run9 run941 run951: $(BUILDDIR)/loadertest-$(_PLATFORM_).d64
@@ -578,8 +603,14 @@ run970: $(BUILDDIR)/loadertest-$(_PLATFORM_).d64
 run971: $(BUILDDIR)/loadertest-$(_PLATFORM_).d71
 	$(EMU971) $^
 
-run973: $(BUILDDIR)/loadertest-$(_PLATFORM_).d64
+run97141: $(BUILDDIR)/loadertest-$(_PLATFORM_).d64
+	$(EMU97141) $^
+
+run973: $(BUILDDIR)/loadertest-$(_PLATFORM_).d71
 	$(EMU973) $^
+
+run97341: $(BUILDDIR)/loadertest-$(_PLATFORM_).d64
+	$(EMU97341) $^
 
 ifneq ($(USE_YAPE),0)
 run981: $(BUILDDIR)/loadertest-$(_PLATFORM_).d81
@@ -589,7 +620,16 @@ run981: $(BUILDDIR)/loadertest-$(_PLATFORM_).d81
 	$(EMU981) "$^:loader test"
 endif
 
+run92000: $(BUILDDIR)/loadertest-$(_PLATFORM_).d81
+	$(EMU92000) "$^:loader test"
 
+run94000: $(BUILDDIR)/loadertest-$(_PLATFORM_).d81
+	$(EMU94000) "$^:loader test"
+
+run91001: $(BUILDDIR)/loadertest-$(_PLATFORM_).d82
+	$(EMU91001) "$^:loader test"
+
+	
 clean:
 	-$(RM) \
 	 $(INTERMDIR)/test-$(_PLATFORM_).o $(INTERMDIR)/test-$(_PLATFORM_)-uncompressed.prg $(INTERMDIR)/test-$(_PLATFORM_).prg \

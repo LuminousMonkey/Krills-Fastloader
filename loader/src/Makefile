@@ -20,6 +20,13 @@ endif
 endif
 
 
+SVNVERSION   = svnversion
+ifneq ($(wildcard ../.svn/format),)
+VERSION      = $(shell $(SVNVERSION) | tr -d [:cntrl:])
+else
+VERSION      =
+endif
+
 CD           = cd
 ECHO         = echo
 PRINTF       = printf
@@ -44,21 +51,17 @@ PERL         = perl
 ZIP          = zip -9
 
 
-ifeq ($(TOP),)
-TOP          = .
-endif
+INCDIR       = ../../shared
+LDRINC       = ../include
 
-INCDIR       = $(TOP)/../../shared
-LDRINC       = $(TOP)/../include
+DECOMPDIR    = decompress
+DRIVESDIR    = drives
+HALDIR       = hal
+INSTALLDIR   = install
+RESIDENTDIR  = resident
 
-DECOMPDIR    = $(TOP)/decompress
-DRIVESDIR    = $(TOP)/drives
-HALDIR       = $(TOP)/hal
-INSTALLDIR   = $(TOP)/install
-RESIDENTDIR  = $(TOP)/resident
-
-BUILDDIR     = $(TOP)/../build
-INTERMDIR    = $(TOP)/../build/intermediate
+BUILDDIR     = ../build
+INTERMDIR    = ../build/intermediate
 
 ifneq ($(EXTCONFIGPATH),)
 CONFIG       = $(EXTCONFIGPATH)/loaderconfig.inc
@@ -71,14 +74,14 @@ INSTALLDEPS  = $(CONFIG) $(BUILDDIR) $(INTERMDIR) \
                $(HALDIR)/hal.inc $(HALDIR)/hal-c64.inc $(HALDIR)/hal-c16.inc \
                $(INSTALLDIR)/install.s \
                $(LDRINC)/loader.inc $(LDRINC)/option-check.inc $(LDRINC)/common-features.inc $(LDRINC)/resident-jumptable.inc $(LDRINC)/install-jumptable.inc $(LDRINC)/diskio.inc \
-               $(TOP)/../version.inc Makefile
+               ../version.inc Makefile
 
 RESIDENTDEPS = $(CONFIG) $(BUILDDIR) $(INTERMDIR) \
                $(DECOMPDIR)/pudecomp.s $(DECOMPDIR)/bbdecomp.s $(DECOMPDIR)/lcdecomp.s $(DECOMPDIR)/exodecomp.s \
                $(HALDIR)/hal.inc $(HALDIR)/hal-c64.inc $(HALDIR)/hal-c16.inc \
                $(RESIDENTDIR)/resident.s \
                $(LDRINC)/loader.inc $(LDRINC)/option-check.inc $(LDRINC)/common-features.inc $(LDRINC)/resident-jumptable.inc $(LDRINC)/install-jumptable.inc $(LDRINC)/diskio.inc \
-               $(TOP)/../version.inc Makefile
+               ../version.inc Makefile
 
 
 ifeq ($(_PLATFORM_),c16)
@@ -111,20 +114,14 @@ dll: so
 mods: drivecode1541-loadfile.prg
 
 
-.svn/entries:
-	$(MKDIR) ./.svn
-	$(TOUCH) $@
-
 ../.svn/entries:
+ifeq ($(VERSION),)
 	$(MKDIR) ../.svn
 	$(TOUCH) $@
+endif
 
-$(LDRINC)/.svn/entries:
-	$(MKDIR) $(LDRINC)/.svn
-	$(TOUCH) $@
-
-$(TOP)/../version.inc: ../.svn/entries .svn/entries $(LDRINC)/.svn/entries
-	cd $(TOP)/.. && $(MAKE) version.inc
+../version.inc: ../.svn/entries
+	$(MAKE) -C .. version.inc
 
 
 # directory targets
@@ -151,7 +148,7 @@ $(INTERMDIR)/install-$(_PLATFORM_).o: $(INSTALLDEPS)
 
 # binary targets
  # drive-side binaries
-$(INTERMDIR)/drivecode.link:
+$(INTERMDIR)/drivecode.link: Makefile
 	$(PRINTF) "MEMORY \n{\n DRIVERAM: start = \$$00, size = \$$0800, file = \"../build/intermediate/drivecode1541.prg\";\n}\n\nSEGMENTS\n{\n CODE: load = DRIVERAM;\n}" > $@
 
 $(INTERMDIR)/drivecode1541.o: $(CONFIG) $(DRIVESDIR)/drivecode1541.s $(DRIVESDIR)/drivecode1541-loadfile.s
@@ -167,7 +164,7 @@ drivecode1541.prg: $(INTERMDIR)/drivecode1541.prg
 $(INTERMDIR)/kernelsymbols1541.inc: $(INTERMDIR)/drivecode1541.prg.map
 	$(PERL) drives/make-kernelsymbolsinc.pl $^ > $@
 
-$(INTERMDIR)/drivecode-loadfile.link:
+$(INTERMDIR)/drivecode-loadfile.link: Makefile
 	$(PRINTF) "MEMORY \n{\n DRIVERAM: start = \$$00, size = \$$0800, file = \"../build/drivecode1541-loadfile.prg\";\n}\n\nSEGMENTS\n{\n CODE: load = DRIVERAM;\n}" > $@
 
 $(INTERMDIR)/drivecode1541-loadfile.o: $(DRIVESDIR)/drivecode1541-loadfile.s $(INTERMDIR)/kernelsymbols1541.inc $(DRIVESDIR)/drivecode1541-kernel.inc
@@ -181,7 +178,7 @@ $(BUILDDIR)/drivecode1541-loadfile.prg: Makefile $(INTERMDIR)/drivecode-loadfile
 drivecode1541-loadfile.prg: $(BUILDDIR)/drivecode1541-loadfile.prg
 
 
- # computer-side binaries
+ # host-side binaries
 .PHONY: $(INTERMDIR)/binary.link $(BUILDDIR)/loader.prg $(INTERMDIR)/install-nonreloc.o $(BUILDDIR)/install.prg $(INTERMDIR)/loader-nonreloc.o $(INTERMDIR)/loader.map (BUILDDIR)/loadersymbols.inc
 
 $(INTERMDIR)/loader-nonreloc-$(_PLATFORM_).o: $(RESIDENTDEPS)
@@ -199,7 +196,7 @@ endif
 	$(AS) $(AS_FLAGS) -D INSTADDR=0x$(INSTALL) --cpu 6502X -o $@ $(INSTALLDIR)/install.s
 	# --cpu 6502X for illegal opcodes
 
-$(INTERMDIR)/binary.link:
+$(INTERMDIR)/binary.link: Makefile
 ifeq ($(ZP),)
 	@$(ECHO) "Usage: $(MAKE) prg INSTALL=<install hexaddress> RESIDENT=<resident hexaddress> ZP=<zp hexaddress>"
 	@exit -1
@@ -236,6 +233,31 @@ $(BUILDDIR)/loader-$(_PLATFORM_).zip: $(BUILDDIR)/loadersymbols-$(_PLATFORM_).in
 
 # dynlink targets
 
+$(INTERMDIR)/module.link: Makefile
+	@$(PERL) -e 'printf "MEMORY {\
+	ZP:       start = \$$0000, size = \$$0100, type = rw, define = yes;\
+	COMBINED: start = \$$0000, size = \$$FFFF, file = %%O;\
+	}\
+	SEGMENTS {\
+	JUMPTABLE: load = COMBINED, type = ro;\
+	INIT:      load = COMBINED, type = ro,  optional = yes;\
+	CODE:      load = COMBINED, type = ro;\
+	RODATA:    load = COMBINED, type = ro;\
+	DATA:      load = COMBINED, type = rw,  define = yes;\
+	BSS:       load = COMBINED, type = bss, define = yes;\
+	ZEROPAGE:  load = ZP,       type = zp;\
+	EXTZP:     load = ZP,       type = zp;\
+	}\
+	FILES {\
+	%%O: format = o65;\
+	}\
+	FORMATS {\
+	o65: os = cc65, type = small\
+;}#	   , id = \$$8000, import = PRINTHEX;}\
+"' > $@
+
+# uncomment the import line above to enable debug output code callable from the loader code in the dynlink library
+
 $(INTERMDIR)/zp-resident.o65.o: $(CONFIG) $(LDRINC)/option-check.inc $(RESIDENTDIR)/zp-resident.s
 	$(AS) $(AS_FLAGS) -D DYNLINK_EXPORT -o $@ $(RESIDENTDIR)/zp-resident.s
 
@@ -249,8 +271,8 @@ $(INTERMDIR)/install-$(_PLATFORM_).o65.o: $(INSTALLDEPS)
 $(INTERMDIR)/install-$(_PLATFORM_).o65: $(INTERMDIR)/install-$(_PLATFORM_).o65.o $(INTERMDIR)/zp-resident.o65.o
 	$(LD) -o $@ -t module -vm -m $@.map $^
 
-$(INTERMDIR)/loader-$(_PLATFORM_).o65: $(INTERMDIR)/loader-$(_PLATFORM_).o65.o $(INTERMDIR)/zp-resident.o65.o
-	$(LD) -o $@ -t module -vm -m $@.map $^
+$(INTERMDIR)/loader-$(_PLATFORM_).o65: $(INTERMDIR)/module.link $(INTERMDIR)/loader-$(_PLATFORM_).o65.o $(INTERMDIR)/zp-resident.o65.o
+	$(LD) -o $@ -C $^ # no map here because of a bug in ld65 when trying to print data for the external PRINTHEX label
 
 $(BUILDDIR)/loader-$(_PLATFORM_).so: $(INTERMDIR)/loader-$(_PLATFORM_).so.uncompd Makefile
 	$(EXO) raw -m 512 $(INTERMDIR)/loader-$(_PLATFORM_).so.uncompd -o $(INTERMDIR)/loader-$(_PLATFORM_).so.temp

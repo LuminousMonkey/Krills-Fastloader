@@ -121,10 +121,10 @@ dcodinit:   lda #~MOTOR ; the motor is on with LOAD_ONCE because
             and VIA2_PRB; of the KERNAL file open operation
             sta VIA2_PRB; immediately before running this code
 
-            lda #T1_IRQ_ON_LOAD | PA_LATCHING_ENABLE; watchdog irq: count phi2 pulses, one-shot;
-            sta VIA2_ACR                            ; port a latching should not be needed here
-                                                    ; (IC rather than discrete logic),
-                                                    ; but it is enabled just to be sure
+            lda #T1_FREE_RUNNING | PA_LATCHING_ENABLE; watchdog irq: count phi2 pulses, 16-bit free-running,
+            sta VIA2_ACR                             ; port a latching should not be needed here
+                                                     ; (IC rather than discrete logic),
+                                                     ; but it is enabled just to be sure
             lda #READ_MODE; BYTE_SYNC is disabled because this is not done via the v-flag here
             sta VIA2_PCR  ; but rather using bit 7 of VIA1_PRA
 
@@ -312,12 +312,12 @@ getblkstid: ldx #OPC_STA_ZP
             lda #OPC_JMP_ABS; full gcr fetch and checksumming
 getblkscan: sta scanswitch
 
-            ; the disk spins at approximately 150 rpm,
-            ; so a revolution takes about 2,000,000 * 60 / 150 = 800,000 cycles at 2 MHz,
+            ; the disk spins at approximately 300 rpm,
+            ; so a revolution takes about 2,000,000 * 60 / 300 = 400,000 cycles at 2 MHz,
             ; so the timeout counter cannot be set to one revolution -
             ; it is reset upon waiting for every new sync,
             ; thus a timeout only indicates a sync-less track range
-            ; (about 65536 / 800,000 * 19 = 1.56 sectors), but exclusively non-header
+            ; (about 65536 / 400,000 * 19 = 3.11 sectors), but exclusively non-header
             ; syncs or missing sectors or similar will leave the loader spinning forever
 readblock:  jsr waitsync
             beq checkchg; returns with carry set on time-out
@@ -655,15 +655,15 @@ c1570fix2:  sta VIA1_PRA
 
             ; TRACKINC         step bits ... store
             ; $00 (move up)    %00 %00 %01 -> %01
-            ;                  %01 %01 %11 -> %10
+            ;     (inwards)    %01 %01 %11 -> %10
             ;                  %10 %10 %01 -> %11
             ;                  %11 %11 %11 -> %00
             ; $01 (move down)  %00 %01 %11 -> %11
-            ;                  %01 %00 %01 -> %00
+            ;     (outwards)   %01 %00 %01 -> %00
             ;                  %10 %11 %11 -> %01
             ;                  %11 %10 %01 -> %10
 
-            lda #$80 | (MINSTPSP+1)
+            lda #$80 | (MINSTPSP + 1)
 trackstep:  sta VIA2_T1C_H
             tax
             lda TRACKINC
@@ -1401,7 +1401,8 @@ DRVCODE71END = *
             ; entry point
 
 dinstall:   lda ROMOS_MAXTRK
-reinstall:  sta INITBUF_MAXTRK
+reinstall:  sei
+            sta INITBUF_MAXTRK
             lda ROMOS_TRACK_DIFF
             sta INITBUF_TRACK_DIFF
 

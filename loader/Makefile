@@ -1,14 +1,28 @@
 
+SVNVERSION       = svnversion
+ifneq ($(wildcard .svn/format),)
+VERSION          = $(shell $(SVNVERSION) | tr -d [:cntrl:])
+else
+VERSION          =
+endif
+
 CD               = cd
 PRINTF           = printf
 MKDIR            = mkdir
 TOUCH            = touch
 ZIP              = zip -9
+ZIP_NO_PATHS     = $(ZIP) -j
+ifneq ($(VERSION),)
+ZIPFILE          = loader-v$(VERSION).zip
+LOADERTEST       = loadertest-v$(VERSION).zip
+else
 ZIPFILE          = loader.zip
-SVNVERSION       = svnversion
+LOADERTEST       = loadertest.zip
+endif
+
 
 SHAREDFOLDER     = shared
-LOADERFOLDER     = loader
+LOADERFOLDER     = $(notdir $(shell pwd))
 DOCSFOLDER       = $(LOADERFOLDER)/docs
 SRCFOLDER        = $(LOADERFOLDER)/src
 INCFOLDER        = $(LOADERFOLDER)/include
@@ -95,18 +109,23 @@ ZIPLIST         += $(TOOLSFOLDER)/$(CC1541SRCFOLDER)/filefinder.cpp
 ZIPLIST         += $(TOOLSFOLDER)/$(CC1541SRCFOLDER)/XGetOpt.cpp
 ZIPLIST         += $(TOOLSFOLDER)/$(CC1541SRCFOLDER)/XGetOpt.h
 
-ZIPLIST         += $(BUILDFOLDER)/loadertest-c64.d64
-ZIPLIST         += $(BUILDFOLDER)/loadertest-c64.d71
-ZIPLIST         += $(BUILDFOLDER)/loadertest-c64.d81
-ZIPLIST         += $(BUILDFOLDER)/loadertest-c16.d64
-ZIPLIST         += $(BUILDFOLDER)/loadertest-c16.d71
-ZIPLIST         += $(BUILDFOLDER)/loadertest-c16.d81
+DISKIMAGES       = $(BUILDFOLDER)/loadertest-c64.d64
+DISKIMAGES      += $(BUILDFOLDER)/loadertest-c64.d71
+DISKIMAGES      += $(BUILDFOLDER)/loadertest-c64.d81
+DISKIMAGES      += $(BUILDFOLDER)/loadertest-c16.d64
+DISKIMAGES      += $(BUILDFOLDER)/loadertest-c16.d71
+DISKIMAGES      += $(BUILDFOLDER)/loadertest-c16.d81
+
+ZIPLIST         += $(DISKIMAGES)
 
 
 default: loader
 
 loader:
 	$(MAKE) -C src
+
+run:
+	$(CD) ..; $(MAKE) -C $(SAMPLESFOLDER)/$(TESTFOLDER) run
 
 $(BUILDFOLDER)/loadertest-c64.d64:
 	$(CD) ..; $(MAKE) -C $(SAMPLESFOLDER)/$(TESTFOLDER) all
@@ -117,26 +136,19 @@ $(BUILDFOLDER)/loadertest-c16.d64:
 zip: $(BUILDFOLDER)/loadertest-c64.d64 $(BUILDFOLDER)/loadertest-c16.d64 version.inc
 	$(CD) ..; $(ZIP) $(ZIPFILE) $(ZIPLIST)
 
+loadertest: $(BUILDFOLDER)/loadertest-c64.d64 $(BUILDFOLDER)/loadertest-c16.d64 version.inc
+	$(CD) ..; $(ZIP_NO_PATHS) $(LOADERTEST) $(DISKIMAGES)
+
 
 .svn/entries:
+ifeq ($(VERSION),)
 	$(MKDIR) ./.svn
 	$(TOUCH) $@
+endif
 
-../$(INCFOLDER)/.svn/entries:
-	$(MKDIR) ../$(INCFOLDER)/.svn
-	$(TOUCH) $@
-
-../$(SRCFOLDER)/.svn/entries:
-	$(MKDIR) ../$(SRCFOLDER)/.svn
-	$(TOUCH) $@
-
-../$(SAMPLESFOLDER)/.svn/entries:
-	$(MKDIR) ../$(SAMPLESFOLDER)/.svn
-	$(TOUCH) $@
-
-version.inc: .svn/entries ../$(SRCFOLDER)/.svn/entries ../$(SAMPLESFOLDER)/.svn/entries ../$(INCFOLDER)/.svn/entries
-ifneq ($(wildcard ../$(DOCSFOLDER)/.svn/entries),)
+version.inc: .svn/entries
+ifneq ($(VERSION),)
 	$(PRINTF) '%s' '.define REPOSITORY_VERSION "' > $@
-	$(SVNVERSION) | tr -d [:cntrl:] >> $@
+	$(PRINTF) '%s' $(VERSION) >> $@
 	$(PRINTF) '%s' '"' >> $@
 endif

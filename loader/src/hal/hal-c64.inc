@@ -102,9 +102,17 @@ _HAL_C64_INC_ = 1
     CLOCK_ATN_HI           = CLOCK | CIA_SERIAL_ATN_OUT_INPUT  | CIA_RS232_INPUT; 1st and 3rd bit pairs ; $33
     CLOCK_ATN_LO           = CLOCK | CIA_SERIAL_ATN_OUT_OUTPUT | CIA_RS232_INPUT; 2nd and 4th bit pairs ; $3b
 
+    .macro ENABLE_WAITBUSY_KERNAL
+            lda #~CIA_SERIAL_CLK_OUT_OUTPUT
+            php
+            sei
+            and CIA2_PRA
+            sta CIA2_PRA
+            plp
+    .endmacro
 
     .macro INIT_CLEAR_DATA_OUT_CLEAR_CLK_OUT_CLEAR_ATN_OUT
-            ; this is called during install and openfile if IDLE_BUS_LOCK != 0
+            ; this is executed during install and openfile if IDLE_BUS_LOCK != 0
             ; hence it accesses the port register rather than the data direction register
             lda #(~CIA_SERIAL_DATA_OUT_OUTPUT) & (~CIA_SERIAL_CLK_OUT_OUTPUT) & (~CIA_SERIAL_ATN_OUT_OUTPUT)
             and CIA2_PRA

@@ -275,7 +275,8 @@ CIA2_CRB                          = CIA2_BASE + $0f; Control Register B
 ;TOD_SET_ALARM                    = %10000000
 
 
-; the CIA in the 1581
+; the CIA in the 1571 and 1581
+; on 1571, only the serial interface is connected
 
 CIA_BASE                          = $4000
 

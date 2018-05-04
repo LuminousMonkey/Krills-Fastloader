@@ -347,12 +347,12 @@ getblkstid: ldx #OPC_STA_ZP
 getblkscan: sta scanswt0
             sta scanswt1
 
-            ; the disk spins at approximately 150 rpm,
-            ; so a revolution takes about 1,000,000 * 60 / 150 = 400,000 cycles,
+            ; the disk spins at approximately 300 rpm,
+            ; so a revolution takes about 1,000,000 * 60 / 300 = 200,000 cycles,
             ; so the timeout counter cannot be set to one revolution -
             ; it is reset upon waiting for every new sync,
             ; thus a timeout only indicates a sync-less track range
-            ; (about 65536 / 400,000 * 19 = 3.11 sectors), but exclusively non-header
+            ; (about 65536 / 200,000 * 19 = 6.23 sectors), but exclusively non-header
             ; syncs or missing sectors or similar will leave the loader spinning forever
 readblock:  jsr waitsync
             beq wsynctmout; returns with carry set on time-out
@@ -963,11 +963,11 @@ restart:    ldx #.lobyte(stackend - $05)
 
 .if UNINSTALL_RUNS_DINSTALL
 
-            lda #T1_IRQ_ON_LOAD | PA_LATCHING_ENABLE; watchdog irq: count phi2 pulses, one-shot;
-                                                    ; enable port a latching to grab one gcr byte at a time
-                                                    ; rather than letting the gcr bitstream scroll through
-                                                    ; port a (applies to 1541 and Oceanic OC-118, but not
-                                                    ; 1541-II)
+            lda #T1_FREE_RUNNING | PA_LATCHING_ENABLE; watchdog irq: count phi2 pulses, 16-bit free-running,
+                                                     ; enable port a latching to grab one gcr byte at a time
+                                                     ; rather than letting the gcr bitstream scroll through
+                                                     ; port a (applies to 1541 and Oceanic OC-118, but not
+                                                     ; 1541-II)
             sta VIA2_ACR
             lda #READ_MODE | BYTE_SYNC_ENABLE
             sta VIA2_PCR
@@ -1008,11 +1008,11 @@ restart:    ldx #.lobyte(stackend - $05)
            ;ldx #$7f
             stx LOADEDMODULE 
 .else
-            lda #T1_IRQ_ON_LOAD | PA_LATCHING_ENABLE; watchdog irq: count phi2 pulses, one-shot;
-                                                    ; enable port a latching to grab one gcr byte at a time
-                                                    ; rather than letting the gcr bitstream scroll through
-                                                    ; port a (applies to 1541 and Oceanic OC-118, but not
-                                                    ; 1541-II)
+            lda #T1_FREE_RUNNING | PA_LATCHING_ENABLE; watchdog irq: count phi2 pulses, 16-bit free-running,
+                                                     ; enable port a latching to grab one gcr byte at a time
+                                                     ; rather than letting the gcr bitstream scroll through
+                                                     ; port a (applies to 1541 and Oceanic OC-118, but not
+                                                     ; 1541-II)
             sta VIA2_ACR
 .endif; UNINSTALL_RUNS_DINSTALL
             rts; returns to dcodinit

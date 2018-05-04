@@ -1,5 +1,7 @@
 
+.include "cpu.inc"
 .include "cia.inc"
+.include "via.inc"
 
 BUFFER                = $00
 SYS_SP                = $01
@@ -66,12 +68,15 @@ LINKSECTOR            = BLOCKBUFFER + $01
 
 BINARY_NIBBLE_MASK    = %00001111
 
-MAXTRACK81            = 80
-MAXSECTOR81           = 39
+ROMOS_MAXTRACK        = $8f; MAXTRACK81 - 1
+ROMOS_MAXSECTOR       = $75; MAXSECTOR81 + 1
+MAXTRACK81            = 80; literal
+MAXSECTOR81           = 39; literal
 
 .if !DISABLE_WATCHDOG
 RESET_TIMERB          = $cb9f
 WATCHDOG_PERIOD       = $20; 32 * 65536 cycles at 2 MHz = 1.049 s
+CONTROLLERIRQPERIODFD = $4e20
     .macro INIT_CONTROLLER
             jsr initcontrl
     .endmacro
@@ -85,6 +90,8 @@ NEW_DISK_VALUE        = $ff
 LOAD_FILE_VALUE       = $7f
 .endif
 
+BUFFERINDEX           = (BLOCKBUFFER - BUFFER0) / BUFFERSIZE
+
 
             .org $0300
 
@@ -93,6 +100,14 @@ LOAD_FILE_VALUE       = $7f
     .export drvcodebeg81 : absolute
     .export drivebusy81  : absolute
 .endif; UNINSTALL_RUNS_DINSTALL
+
+
+.export cmdfdfix0 : absolute
+.export cmdfdfix1 : absolute
+.export cmdfdfix2 : absolute
+.export cmdfdfix3 : absolute
+.export cmdfdfix4 : absolute
+
 
 drvcodebeg81: .byte .hibyte(drivebusy81 - * + $0100 - $01); init transfer count hi-byte
 
@@ -157,6 +172,8 @@ dcodinit:   tsx
             bne :-
 
 .if !DISABLE_WATCHDOG
+            lda cmdfdfix2; 0 for FD
+            beq :+
             ; watchdog initialization
             lda #$ff
             sta CIA_TA_LO
@@ -168,6 +185,9 @@ dcodinit:   tsx
             sta CIA_ICR
             lda #CIA_SET_INTF | TIMERB_IRQ
             sta CIA_ICR
+            bne :++
+:           jsr initwatchd
+:
 .endif
 
 .if UNINSTALL_RUNS_DINSTALL
@@ -226,7 +246,7 @@ getfilenam: jsr dgetbyte; get filename
             beq :+
             inx
             sta filename - LOAD_FILE_VALUE - 1,x
-            cpx #<(FILENAME_MAXLENGTH - 2 - LOAD_FILE_VALUE)
+            cpx #.lobyte(FILENAME_MAXLENGTH - 2 - LOAD_FILE_VALUE)
             bne getfilenam
 :           jsr drwaitrkch; disables watchdog
             jsr gethashval
@@ -240,7 +260,7 @@ getfilenam: jsr dgetbyte; get filename
             jmp samedisk
 
 newdisk:    ; a new disk has been inserted
-            lda DIRTRACK81
+            jsr getdirtrk
             ldy #DIRSECTOR81
             jsr getblock
             bcs newdisk
@@ -278,7 +298,7 @@ nextdirsct: bit CIA_PRA; query DISK_CHANGE
            ;ldy LINKSECTOR
            ;lda LINKTRACK
             bne :+
-            lda DIRTRACK81
+            jsr getdirtrk
             ldy FIRSTDIRSECTOR
 :           sta NEXTDIRBLOCKTRACK
             sty NEXTDIRBLOCKSECTOR
@@ -316,14 +336,15 @@ dnotafile:  tya
             tay
             bcc dgdirloop; process all entries in a dir block
 
-            lda NEXTDIRBLOCKTRACK
             ldy NEXTDIRBLOCKSECTOR
-            cmp DIRTRACK81
+            jsr getdirtrk
+            cmp NEXTDIRBLOCKTRACK
             bne :+
             cpy #DIRSECTOR81
             bne :+
             stx WRAPFILEINDEX
-:           cmp CYCLESTARTENDTRACK
+:           lda NEXTDIRBLOCKTRACK
+            cmp CYCLESTARTENDTRACK
             bne nextdirsct
             cpy CYCLESTARTENDSECTOR
             bne nextdirsct
@@ -398,12 +419,19 @@ findfile:   lda FILENAMEHASH0
 
             ; check for illegal track or sector
             beq toillegal + $00
-            cpx #MAXTRACK81 + 1
+
+            dex; 79->77 cmp 79 -> bcc
+            dex; 80->78 cmp 79 -> bcc
+               ; 81->80 cmp 79 -> bcs
+            cpx ROMOS_MAXTRACK; #MAXTRACK81 - 1
+            inx
+            inx
             bcs toillegal + $01
-            cpy #MAXSECTOR81 + 1
+            cpy ROMOS_MAXSECTOR; #MAXSECTOR81 + 1
             bcc :+
 toillegal:  sec
-            jmp illegalts
+cmdfdfix0:  jmp illegalts; is changed to bit illegalts on FD2000/4000 to disable illegal track or sector error,
+                         ; ROM variables for logical track/sector boundaries aren't known (probably around MAXTRACKFD = $54)
 
 :           tya
             pha
@@ -414,8 +442,8 @@ toillegal:  sec
 
             ldx #$00
             stx BLOCKINDEX
-loadblock:  sta JOBTRKSCTTABLE + ((BLOCKBUFFER - BUFFER0) / BUFFERSIZE * 2) + TRACKOFFSET
-            sty JOBTRKSCTTABLE + ((BLOCKBUFFER - BUFFER0) / BUFFERSIZE * 2) + SECTOROFFSET
+loadblock:  sta JOBTRKSCTTABLE + (2 * BUFFERINDEX) + TRACKOFFSET
+            sty JOBTRKSCTTABLE + (2 * BUFFERINDEX) + SECTOROFFSET
 :           jsr getblockag
             bcs :-
 
@@ -440,7 +468,7 @@ loadblock:  sta JOBTRKSCTTABLE + ((BLOCKBUFFER - BUFFER0) / BUFFERSIZE * 2) + TR
 
             ; loading is finished
 
-.if (::FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME) && (LOAD_ONCE = 0)
+.if (::FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME) & (LOAD_ONCE = 0)
 
             ldx FILEINDEX
             inx
@@ -449,7 +477,7 @@ loadblock:  sta JOBTRKSCTTABLE + ((BLOCKBUFFER - BUFFER0) / BUFFERSIZE * 2) + TR
             beq :+
             cpx NUMFILES
             bcc :++
-:           lda DIRTRACK81
+:           jsr getdirtrk
 :           jsr trackseek; move head to the start track of the next file in the directory
 
             clc; all ok after loading
@@ -487,15 +515,27 @@ initcontrl: lda SYSIRQVECTORBUF_LO
             sta IRQVECTOR_LO
             lda SYSIRQVECTORBUF_HI
             sta IRQVECTOR_HI
+            lda cmdfdfix2; 0 for FD
+            beq :+
             jmp RESET_TIMERB
+:           lda #.lobyte(CONTROLLERIRQPERIODFD)
+            sta VIA_T1C_L
+            lda #.hibyte(CONTROLLERIRQPERIODFD)
+            sta VIA_T1C_H
+            rts
 .endif
+
+cmdfdfix1 = * + 1
+cmdfdfix2 = * + 2
+getdirtrk:  lda DIRTRACK81
+            rts
 
 trackseek:  tax
             dex
-            stx HDRS2 + ((BLOCKBUFFER - BUFFER0) / BUFFERSIZE * 2)
+            stx HDRS2 + (2 * BUFFERINDEX)
             INIT_CONTROLLER
             lda #SEEK_DV
-            ldx #(BLOCKBUFFER - BUFFER0) / BUFFERSIZE
+            ldx #BUFFERINDEX
 .if DISABLE_WATCHDOG
             jmp STROBE_CONTROLLER; move head to the start track of the next file in the
                                  ; directory
@@ -511,15 +551,27 @@ initwatchd: ; the i-flag is set here
             sta IRQVECTOR_LO
             lda #.hibyte(watchdgirq)
             sta IRQVECTOR_HI
+            lda cmdfdfix2; 0 for FD
+            beq :+
             lda #.lobyte(WATCHDOG_PERIOD)
             sta CIA_TB_LO
             lda #.hibyte(WATCHDOG_PERIOD)
             sta CIA_TB_HI
-            rts
+:           rts
 
-enablewdog: lda #COUNT_TA_UNDF | FORCE_LOAD | ONE_SHOT | TIMER_START
+enablewdog: lda cmdfdfix2; 0 for FD
+            beq :+
+            lda #COUNT_TA_UNDF | FORCE_LOAD | ONE_SHOT | TIMER_START
             sta CIA_CRB
             bit CIA_ICR
+            ENABLE_WATCHDOG
+            rts            
+:           lda #IRQ_CLEAR_FLAGS | IRQ_ALL_FLAGS
+            sta VIA_IER; no irqs from via
+            lda #IRQ_SET_FLAGS | IRQ_TIMER_1
+            sta VIA_IER; timer 1 irqs from via
+            lda #$ff
+            sta VIA_T1C_H
             ENABLE_WATCHDOG
             rts
 .endif; !DISABLE_WATCHDOG
@@ -547,8 +599,8 @@ motrledoff: ; turn off motor
             pha
             INIT_CONTROLLER
             lda #MOTOFFI_DV
-            ldx #(BLOCKBUFFER - BUFFER0) / BUFFERSIZE
-            jsr STROBE_CONTROLLER; move head to the start track of the next file in the
+            ldx #BUFFERINDEX
+            jsr STROBE_CONTROLLER
             lda #DRIVEOFF
             sta DRIVESTATE
             pla
@@ -566,24 +618,24 @@ ddliteon:   lda #DRIVE_LED
             ldy #$ff
             bne store_cia; jmp
 
-getblock:   sta JOBTRKSCTTABLE + ((BLOCKBUFFER - BUFFER0) / BUFFERSIZE * 2) + TRACKOFFSET
-            sty JOBTRKSCTTABLE + ((BLOCKBUFFER - BUFFER0) / BUFFERSIZE * 2) + SECTOROFFSET
+getblock:   sta JOBTRKSCTTABLE + (2 * BUFFERINDEX) + TRACKOFFSET
+            sty JOBTRKSCTTABLE + (2 * BUFFERINDEX) + SECTOROFFSET
 getblockag: INIT_CONTROLLER
             lda #READ_DV
-            ldx #(BLOCKBUFFER - BUFFER0) / BUFFERSIZE
+            ldx #BUFFERINDEX
             jsr STROBE_CONTROLLER
 
 .if !DISABLE_WATCHDOG
             jsr initwatchd
 .endif
 
-            lda JOBCODESTABLE + ((BLOCKBUFFER - BUFFER0) / BUFFERSIZE); FD does not return the error status in the accu
+            lda JOBCODESTABLE + BUFFERINDEX; FD does not return the error status in the accu
             cmp #OK_DV + 1
 
             ; the link track is returned last so that the z-flag
             ; is set if this block is the file's last one
             ldy LINKSECTOR
-            ldx JOBTRKSCTTABLE + ((BLOCKBUFFER - BUFFER0) / BUFFERSIZE * 2) + 1; LOADEDSECTOR
+            ldx JOBTRKSCTTABLE + (2 * BUFFERINDEX) + SECTOROFFSET; LOADEDSECTOR
             lda LINKTRACK
             rts
 
@@ -600,7 +652,7 @@ duninstall: txa
             jsr ddliteon
             lda #$ff; fade off the busy led
 :           pha
-            lda DIRTRACK81
+            jsr getdirtrk
             jsr trackseek
             pla
             tax
@@ -617,7 +669,7 @@ duninstall: txa
     .if !DISABLE_WATCHDOG
 
 watchdgirq: jsr ddliteon
-            lda DIRTRACK81
+            jsr getdirtrk
             jsr trackseek
             ; fade off the busy led and reset the drive
             ldx #$ff
@@ -651,7 +703,7 @@ fnamehash:  ldx #-$01 - LOAD_FILE_VALUE - 1
             beq gethashval
             inx
             sta filename - LOAD_FILE_VALUE - 1,x
-            cpx #<(FILENAME_MAXLENGTH - 2 - LOAD_FILE_VALUE)
+            cpx #.lobyte(FILENAME_MAXLENGTH - 2 - LOAD_FILE_VALUE)
             bne :-
 
 gethashval: clc
@@ -659,7 +711,7 @@ gethashval: clc
             stx HASHVALUE1LO
             stx HASHVALUE0HI
             stx HASHVALUE1HI
-hashloop:   lda filename - LOAD_FILE_VALUE -1,x
+hashloop:   lda filename - LOAD_FILE_VALUE - 1,x
             adc HASHVALUE0LO
             sta HASHVALUE0LO
             bcc :+
@@ -678,15 +730,15 @@ hashloop:   lda filename - LOAD_FILE_VALUE -1,x
             adc HASHVALUE0HI
             rts
 
-.endif; (::FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME) && (!LOAD_ONCE)
+.endif; (::FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME) & (!LOAD_ONCE)
 
             ; carry: clear = ok, set = load error
 sendstatus: lda #$00
             sta dsendcmp + $01
             sbc #$01; carry clear: result is $00 - $02 = $fe - loading finished successfully
                     ; carry set:   result is $00 - $01 = $ff - load error
-            sta JOBTRKSCTTABLE + ((BLOCKBUFFER - BUFFER0) / BUFFERSIZE * 2) + TRACKOFFSET; make sure DATA OUT (track change) is not
-                                                                                         ; raised after transferring the status
+            sta JOBTRKSCTTABLE + (2 * BUFFERINDEX) + TRACKOFFSET; make sure DATA OUT (track change) is not
+                                                                ; raised after transferring the status
 
 sendblock:  sta BLOCKBUFFER + $00; block index
 .if !DISABLE_WATCHDOG
@@ -699,12 +751,14 @@ waitready:  bit CIA_PRB
             ldy #$00
 sendloop:
 .if !DISABLE_WATCHDOG
+cmdfdfix3 = * + 1
             lda #COUNT_TA_UNDF | FORCE_LOAD | ONE_SHOT | TIMER_START
+cmdfdfix4 = * + 1
             sta CIA_CRB       ; 2 + 4; reset watchdog time-out
 .endif
             ldx BLOCKBUFFER,y ; 4
             lda SENDTABLELO,x ; 4
-                              ; = 22
+                              ; = 22 (+6 with watchdog)
 
 :           bit CIA_PRB       ; 4
             bmi :-            ; 3
@@ -739,7 +793,7 @@ dsendcmp:   cpy #$00          ; 2
             bmi :-     ; of the last data bit pair
 
             lda LINKTRACK
-            cmp JOBTRKSCTTABLE + ((BLOCKBUFFER - BUFFER0) / BUFFERSIZE * 2) + TRACKOFFSET
+            cmp JOBTRKSCTTABLE + (2 * BUFFERINDEX) + TRACKOFFSET
             beq drivebusy81; pull DATA_OUT high when changing tracks
 drwaitrkch: ldy #CLK_OUT | DATA_OUT; flag track change
             SKIPWORD

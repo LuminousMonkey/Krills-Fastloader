@@ -61,10 +61,11 @@ COLRAM = __COLRAM_LOAD__
 COLRAM = __COLRAMHI_LOAD__
     .endif
 
+    .if UNINSTALL_RUNS_DINSTALL
 .segment "BITMAP"
 .import __BITMAP_LOAD__
 INSTALLBUFFER = __BITMAP_LOAD__
-
+    .endif
 .else
 
 .segment "BITMAP"
@@ -75,10 +76,11 @@ BITMAP = __BITMAP_LOAD__
 .import __COLRAM_LOAD__
 COLRAM = __COLRAM_LOAD__
 
+    .if UNINSTALL_RUNS_DINSTALL
 .segment "BITMAPHI"
 .import __BITMAPHI_LOAD__
 INSTALLBUFFER = __BITMAPHI_LOAD__
-
+    .endif
 .endif
 
 .if PLATFORM <> diskio::platform::COMMODORE_16
@@ -626,11 +628,13 @@ verifyok:
 
 .macro POP_MEMCONFIG
     .if PLATFORM = diskio::platform::COMMODORE_16
+            .local enable_ram
+
             plp
             ENABLE_ALL_RAM
-            bcc :+
+            bcc enable_ram
             ENABLE_ALL_ROM
-:
+enable_ram:
     .else
             pla
             sta IO_PORT
@@ -638,6 +642,70 @@ verifyok:
 .endmacro
 
 
+; error checking is done in the respective test macros,
+; however, when running in KERNAL fallback mode, illegal track or sector errors
+; are returned for files located on the extended upper tracks -
+; these are simply ignored in this test program
+
+.macro MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR to, stat
+    ; the extended tracks only hold the chained
+    ; compressed files which are loaded to upper memory
+    .if LOAD_TO_UPPER_MEM & CHAINED_COMPD_FILES
+            .local ignore
+            .local dontignore
+            .local xbuf
+
+            stx xbuf; preserve last call address
+            tsx     ; on the stack, so that the
+            dex     ; error routine can correctly
+            dex     ; display it
+            txs
+
+            pha
+            php
+            bcc dontignore
+            bit DRIVETYPE
+            bpl dontignore; branch if not generic drive
+            cmp #diskio::status::ILLEGAL_TRACK_OR_SECTOR
+            beq ignore
+            cmp #diskio::status::FILE_NOT_FOUND
+            bne dontignore
+
+ignore:     pla
+            pla
+            pla
+            pla
+            ldx xbuf
+
+        .if END_ADDRESS_API
+            clc
+            lda #.lobyte(BITMAP_SIZE)
+            adc loadaddrlo
+            sta endaddrlo
+            lda #.hibyte(BITMAP_SIZE)
+            adc loadaddrhi
+            sta endaddrhi
+        .endif; END_ADDRESS_API
+
+        .ifnblank stat
+            sec
+            lda stat
+        .else
+            clc
+            lda #diskio::status::OK
+        .endif
+            jmp to
+
+dontignore: plp
+            pla
+            tsx
+            inx
+            inx
+            txs
+xbuf = * + $01
+            ldx #$00
+    .endif; LOAD_TO_UPPER_MEM & CHAINED_COMPD_FILES
+.endmacro
 
 .macro TEST testmacro, param0, param1
             MEMCONFIG_BUFFER
@@ -671,7 +739,7 @@ endaddfail: lda #ERRENDADDR
             ldy endaddrhi
             jmp error
 endaddrok:
-    .endif
+    .endif; END_ADDRESS_API
 .endmacro
 
 .macro PRINTTESTNAME testname
@@ -716,7 +784,7 @@ nameend:
             TEST testmacro, X_SHEBA_UNCOMPRESSED, Y_SHEBA_UNCOMPRESSED
             CHECKENDADDRESS
             TEST testmacro, X_PRHEI_UNCOMPRESSED, Y_PRHEI_UNCOMPRESSED
-           CHECKENDADDRESS
+            CHECKENDADDRESS
 .endmacro
 
 .macro TESTCOMPRESSED testmacro, testmacrochained, testname
@@ -746,9 +814,6 @@ nameend:
             ENABLE_MEMCONFIG_CHECK
 .endmacro
 
-
-
-; helper macros
 
 .macro MEMCLEAR address, size
             lda #.hibyte(size)
@@ -822,7 +887,7 @@ nameend:
             lda #PAL_NTSC_MASK
             and TED_CTRL2
             bne :+
-            inx; pal
+            inx; PAL
 :           stx PALNTSC
             stx zpbuffer + PALNTSC
 
@@ -962,6 +1027,7 @@ calibrate:  jsr readctr
             CONSOLE returnmsg
 
             jsr printrgns
+
 .endif; DYNLINK_IMPORT
 
             lda #.lobyte(brkhandler)
@@ -1004,10 +1070,15 @@ calibrate:  jsr readctr
 
             DISABLE_MEMCONFIG_CHECK
 
+.if UNINSTALL_RUNS_DINSTALL
+            bit DRIVETYPE
+            bmi :+; skip if generic drive
+                  ; this also avoids overwriting $c800..$cfff where the IEEE-488 KERNAL extensions reside with SFD-1001
             PUSH_MEMCONFIG_AND_ENABLE_ALL_RAM
             MEMCOPY __DISKIO_INSTALL_LOAD__, INSTALLBUFFER, ALIGN __DISKIO_INSTALL_SIZE__, $0100
             POP_MEMCONFIG
-
+:
+.endif
             inc memchktype
 
             CONSOLE donemsg
@@ -1023,16 +1094,16 @@ calibrate:  jsr readctr
 
             ldx DRIVETYPE
             bpl :+
-            ldx #diskio::drivetype::DRIVE_1581 + 1; generic drive
+            ldx #diskio::drivetype::DRIVE_1581 + 3; generic drive
 :           lda drivemsgsl - diskio::drivetype::DRIVE_1541,x
             ldy drivemsgsh - diskio::drivetype::DRIVE_1541,x
             jsr consoleout
 
 .if !LOAD_ONCE
             ldx DRIVETYPE
-            cpx #diskio::drivetype::DRIVE_1581 + 1
+            cpx #diskio::drivetype::DRIVE_1581 + 3; generic drive
             bcc :+
-            ldx #diskio::drivetype::DRIVE_1581 + 1
+            ldx #diskio::drivetype::DRIVE_1581 + 3; generic drive
 :           ldy paramoffst - diskio::drivetype::DRIVE_1541,x
             lda xshebaunpt,y
             sta X_SHEBA_UNCOMPRESSED
@@ -1345,7 +1416,7 @@ SPRITESXPOS = $18
 
             ldx DRIVETYPE
             bpl :+
-            ldx #diskio::drivetype::DRIVE_1581 + 1; generic drive
+            ldx #diskio::drivetype::DRIVE_1581 + 3; generic drive
 :           lda drivtypesl - diskio::drivetype::DRIVE_1541,x
             ldy drivtypesh - diskio::drivetype::DRIVE_1541,x
             tax
@@ -1394,7 +1465,6 @@ testloop:
             INITSTAT
 
     .if NONBLOCKING_API
-
             ; --- non-blockingly load without decompression ---
             PRINTTESTNAME "LOADRAW_NB"
         .if LOAD_TO_API
@@ -1402,17 +1472,20 @@ testloop:
         .else
             LOADRAW_NB
         .endif
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR loadoncdun
             jcs error
             ldx BORDERCOLOUR
 :           ; imagine some data processing here
             inc BORDERCOLOUR
             LOOP_BUSY :-
             stx BORDERCOLOUR
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR loadoncdun
             jcs error
     .elseif LOAD_COMPD_API
             ; --- load compressed ---
             PRINTTESTNAME "LOADCOMPD"
             LOADCOMPD
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR loadoncdun
             jcs error
     .elseif LOAD_RAW_API
             ; --- load raw ---
@@ -1422,6 +1495,7 @@ testloop:
         .else
             LOADRAW
         .endif
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR loadoncdun
             jcs error
     .elseif OPEN_FILE_POLL_BLOCK_API
             ; --- load polled ---
@@ -1431,6 +1505,7 @@ testloop:
         .else
             OPENFILE
         .endif
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR loadoncdun
             jcs error
 :           POLLBLOCK
         .if DYNLINK_IMPORT
@@ -1440,19 +1515,20 @@ testloop:
             plp
         .endif
             bcc :-
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR loadoncdun
             cmp #diskio::status::OK
             jne error
-
     .endif; NONBLOCKING_API | LOAD_COMPD_API | LOAD_RAW_API | OPEN_FILE_POLL_BLOCK_API
 
             PRINTSTAT BITMAP_SIZE
-
+loadoncdun:
 .else; !LOAD_ONCE
 
 .if OPEN_FILE_POLL_BLOCK_API
 
             ; --- load polled ---
     .macro LOADPOLLED xsource, ysource
+            .local done
 
             INITSTAT
 
@@ -1461,11 +1537,12 @@ testloop:
         .else
             OPENFILE xsource, ysource
         .endif
-
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR done
             jcs error
 
 :           ; imagine some data processing here
             POLLBLOCK
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR done
         .if DYNLINK_IMPORT
             php
             cmp #diskio::status::NOT_SUPPORTED
@@ -1477,6 +1554,7 @@ testloop:
             jne error
 
             PRINTSTAT BITMAP_SIZE
+done:
     .endmacro
 
             TESTUNCOMPRESSED LOADPOLLED, "POLLBLOCK"
@@ -1487,13 +1565,15 @@ testloop:
             bcs :+
             POLLBLOCK
             jcc error
-        .if ::FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
-:           cmp #diskio::status::FILE_NOT_FOUND
+        .if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
+:           MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR pollbldone, #diskio::status::FILE_NOT_FOUND
+            cmp #diskio::status::FILE_NOT_FOUND
         .else
-:           cmp #diskio::status::INVALID_PARAMETERS
+:           MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR pollbldone, #diskio::status::INVALID_PARAMETERS
+            cmp #diskio::status::INVALID_PARAMETERS
         .endif
             jne error
-            MEMCONFIG_CHECK
+pollbldone: MEMCONFIG_CHECK
     .endif
 
     .if GETC_API
@@ -1505,6 +1585,7 @@ testloop:
             .local getcloop
             .local getcptr
             .local getcerr
+            .local done
 
             INITSTAT
 
@@ -1513,12 +1594,14 @@ testloop:
         .else
             OPENFILE xsource, ysource
         .endif
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR done
             jcs error
             lda #.lobyte(BITMAP)
             sta getcptr + $01
             lda #.hibyte(BITMAP)
             sta getcptr + $02
 getcloop:   GETC
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR done, #diskio::status::EOF
             bcs getcerr
             sta getcptr - $01
             lda #$00
@@ -1538,6 +1621,7 @@ getcerr:    cmp #diskio::status::EOF
             jne error
 
             PRINTSTAT BITMAP_SIZE
+done:
     .endmacro
 
             TESTUNCOMPRESSED LOADGETC, "GETC/RAW"
@@ -1548,13 +1632,15 @@ getcerr:    cmp #diskio::status::EOF
             bcs getcerr
             GETC
             jcc error
-            .if ::FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
-getcerr:    cmp #diskio::status::FILE_NOT_FOUND
+            .if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
+getcerr:    MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR getcdone, #diskio::status::FILE_NOT_FOUND
+            cmp #diskio::status::FILE_NOT_FOUND
             .else
-getcerr:    cmp #diskio::status::INVALID_PARAMETERS
+getcerr:    MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR getcdone, #diskio::status::INVALID_PARAMETERS            
+            cmp #diskio::status::INVALID_PARAMETERS
             .endif
             jne error
-            MEMCONFIG_CHECK
+getcdone:   MEMCONFIG_CHECK
         .endif
 
     .endif; GETC_API
@@ -1642,48 +1728,57 @@ internerr:  lda #diskio::status::INTERNAL_ERROR
 aftgetchnk:
         .else
             jsr loadgetchunk
-        .endif
+        .endif 
     .endmacro
 
     .macro LOADGETCHUNK xsource, ysource
+            .local done
 
             INITSTAT
 
             OPENFILE xsource, ysource
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR done
             jcs error
             lda #.lobyte(BITMAP)
             sta getchunkwp + $01
             LOADGETCHUNK_COMMON
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR done
             cmp #diskio::status::EOF
             jne error
 
             PRINTSTAT BITMAP_SIZE
+done:
     .endmacro
 
     .macro LOADGETCHUNK_CHAINED xsource, ysource
 
             .local chunkbyte
+            .local done
 
             INITSTAT
 
             OPENFILE xsource, ysource
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR done
             jcs error
             lda #.lobyte(BITMAP)
             sta getchunkwp + $01
             LOADGETCHUNK_COMMON
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR done
             jcs error
             stx chunkbyte + $00
             sty chunkbyte + $01
-        chunkbyte = * + 1
+chunkbyte = * + 1
             lda a:$0000
             sta BITMAP
             lda #.lobyte(BITMAP + $01)
             sta getchunkwp + $01
             LOADGETCHUNK_COMMON
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR done
             cmp #diskio::status::EOF
             jne error
 
             PRINTSTAT (2 * BITMAP_SIZE)
+done:
     .endmacro
 
             TESTCOMPRESSED LOADGETCHUNK, LOADGETCHUNK_CHAINED, "GETCHUNK/CMP"
@@ -1694,13 +1789,15 @@ aftgetchnk:
             bcs :+
             GETCHUNK #.lobyte($01), #.hibyte($01)
             jcc error
-            .if ::FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
-:           cmp #diskio::status::FILE_NOT_FOUND
+            .if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
+:           MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR getchkdone, #diskio::status::FILE_NOT_FOUND
+            cmp #diskio::status::FILE_NOT_FOUND
             .else
-:           cmp #diskio::status::INVALID_PARAMETERS
+:           MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR getchkdone, #diskio::status::INVALID_PARAMETERS
+            cmp #diskio::status::INVALID_PARAMETERS
             .endif
             jne error
-            MEMCONFIG_CHECK
+getchkdone: MEMCONFIG_CHECK
         .endif
 
     .endif; GETCHUNK_API
@@ -1710,6 +1807,7 @@ aftgetchnk:
             ; --- load raw ---
 
     .macro LOAD_RAW xsource, ysource
+            .local done
 
             INITSTAT
 
@@ -1718,9 +1816,11 @@ aftgetchnk:
         .else
             LOADRAW xsource, ysource
         .endif
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR done
             jcs error
 
             PRINTSTAT BITMAP_SIZE
+done:
     .endmacro
 
             TESTUNCOMPRESSED LOAD_RAW, "LOADRAW"
@@ -1729,13 +1829,15 @@ aftgetchnk:
             MEMCONFIG_BUFFER
             LOADRAW #bogusparmx, #bogusparmy
             jcc error
-        .if ::FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
+        .if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR loadrwdone, #diskio::status::FILE_NOT_FOUND
             cmp #diskio::status::FILE_NOT_FOUND
         .else
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR loadrwdone, #diskio::status::INVALID_PARAMETERS
             cmp #diskio::status::INVALID_PARAMETERS
         .endif
             jne error
-            MEMCONFIG_CHECK
+loadrwdone: MEMCONFIG_CHECK
     .endif
 .endif
 
@@ -1774,6 +1876,10 @@ aftgetchnk:
             cmp #diskio::drivetype::DRIVE_1571CR
             beq upload1571
             cmp #diskio::drivetype::DRIVE_1581
+            jeq upload1581
+            cmp #diskio::drivetype::DRIVE_CMD_FD_2000
+            jeq upload1581
+            cmp #diskio::drivetype::DRIVE_CMD_FD_4000
             jeq upload1581
 
         .if DYNLINK_IMPORT
@@ -1817,14 +1923,17 @@ skipdrvcod:
             ; --- load a compressed file, then decompress after loading
 
     .macro LOADANDMEMDECOMP_COMMON xsource, ysource
+            .local done
 
             INITSTAT
 
         .if LOAD_RAW_API
             LOADRAW xsource, ysource
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR done, #diskio::status::ILLEGAL_TRACK_OR_SECTOR
             jcs error
         .elseif OPEN_FILE_POLL_BLOCK_API
             OPENFILE xsource, ysource
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR done, #diskio::status::ILLEGAL_TRACK_OR_SECTOR
             jcs error
 
             .if GETC_API
@@ -1835,8 +1944,6 @@ skipdrvcod:
 
             GETC
             bcs getcerr
-            ; loadaddr is only known now when
-            ; not loading by KERNAL fallback
             ldx loadaddrlo
             ldy loadaddrhi
             sty getcstore + $02
@@ -1849,42 +1956,56 @@ getcstore:  sta a:$00,x
             bne getcloop
             inc getcstore + $02
             bne getcloop
-getcerr:    cmp #diskio::status::EOF
+getcerr:    MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR done, #diskio::status::ILLEGAL_TRACK_OR_SECTOR
+            cmp #diskio::status::EOF
             jne error
 
             .else; !GETC_API
 
 :           POLLBLOCK
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR done, #diskio::status::ILLEGAL_TRACK_OR_SECTOR
                 .if DYNLINK_IMPORT
             php
             cmp #diskio::status::NOT_SUPPORTED
             jeq error
             plp
-
                 .endif; DYNLINK_IMPORT
             bcc :-
             cmp #diskio::status::OK
             jne error
 
             .endif; !GETC_API
+
         .else
             .error "To test memory decompression, please set LOAD_RAW_API or OPEN_FILE_POLL_BLOCK_API to non-0"
         .endif
+
+            clc
+done:
     .endmacro
 
     .macro LOADANDMEMDECOMP xsource, ysource
+            .local done
+
         .if VERIFY
             .local verifyok
 
             MEMCLEAR BITMAP, ALIGN BITMAP_SIZE, $0100
+
             LOADANDMEMDECOMP_COMMON xsource, ysource
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR done
+
             PUSH_MEMCONFIG_AND_ENABLE_ALL_RAM
             MEMCOPY BITMAP + ALIGN (BITMAP_SIZE >> 1), $0100, COMPDATA + ALIGN BITMAP_SIZE, $0100, ALIGN BITMAP_SIZE, $0100
             POP_MEMCONFIG
             MEMCLEAR BITMAP, ALIGN BITMAP_SIZE, $0100
+
             LOADANDMEMDECOMP_COMMON xsource, ysource
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR done
             PUSH_MEMCONFIG_AND_ENABLE_ALL_RAM
+
             MEMCOMP BITMAP + ALIGN (BITMAP_SIZE >> 1), $0100, COMPDATA + ALIGN BITMAP_SIZE, $0100, ALIGN BITMAP_SIZE, $0100
+
             php
             pla
             tax
@@ -1897,6 +2018,7 @@ getcerr:    cmp #diskio::status::EOF
 verifyok:
         .else
             LOADANDMEMDECOMP_COMMON xsource, ysource
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR done
         .endif
 
 
@@ -1916,10 +2038,14 @@ verifyok:
         .endif
 
             PRINTSTAT BITMAP_SIZE
+done:
     .endmacro
 
     .macro LOADANDMEMDECOMPCHAINED xsource, ysource
+           .local done
+
             LOADANDMEMDECOMP_COMMON xsource, ysource
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR done
 
         .if LOAD_TO_UPPER_MEM
             PUSH_MEMCONFIG_AND_ENABLE_ALL_RAM
@@ -1939,6 +2065,7 @@ verifyok:
         .endif
 
             PRINTSTAT (2 * BITMAP_SIZE)
+done:
     .endmacro
 
             TESTCOMPRESSED LOADANDMEMDECOMP, LOADANDMEMDECOMPCHAINED, "MEMDECOMP"
@@ -1949,6 +2076,7 @@ verifyok:
             ; --- non-blockingly load raw ---
 
     .macro LOADRAWNONBLOCKING xsource, ysource
+            .local done
 
             INITSTAT
 
@@ -1957,15 +2085,18 @@ verifyok:
         .else
             LOADRAW_NB xsource, ysource
         .endif
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR done
             jcs error
             ldx BORDERCOLOUR
 :           ; imagine some data processing here
             inc BORDERCOLOUR
             LOOP_BUSY :-
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR done
             stx BORDERCOLOUR
             jcs error
 
             PRINTSTAT BITMAP_SIZE
+done:
     .endmacro
 
             TESTUNCOMPRESSED LOADRAWNONBLOCKING, "LOADRAW_NB"
@@ -1979,13 +2110,15 @@ verifyok:
             inc BORDERCOLOUR
             LOOP_BUSY :-
 :           stx BORDERCOLOUR
-        .if ::FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
+        .if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR loadrnbdun, #diskio::status::FILE_NOT_FOUND            
             cmp #diskio::status::FILE_NOT_FOUND
         .else
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR loadrnbdun, #diskio::status::INVALID_PARAMETERS            
             cmp #diskio::status::INVALID_PARAMETERS
         .endif
             jne error
-            MEMCONFIG_CHECK
+loadrnbdun: MEMCONFIG_CHECK
     .endif
 
 .endif
@@ -1995,21 +2128,29 @@ verifyok:
             ; --- load with decompression ---
 
     .macro LOADCOMPRESSED xsource, ysource
+            .local done
+
             INITSTAT
 
             LOADCOMPD xsource, ysource
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR done
             jcs error
 
             PRINTSTAT BITMAP_SIZE
+done:
     .endmacro
 
     .macro LOADCOMPRESSEDCHAINED xsource, ysource
+            .local done
+
             INITSTAT
 
             LOADCOMPD xsource, ysource
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR done
             jcs error
 
             PRINTSTAT (2 * BITMAP_SIZE)
+done:
     .endmacro
 
             TESTCOMPRESSED LOADCOMPRESSED, LOADCOMPRESSEDCHAINED, "LOADCOMPD"
@@ -2018,13 +2159,15 @@ verifyok:
             MEMCONFIG_BUFFER
             LOADCOMPD #bogusparmx, #bogusparmy
             jcc error
-        .if ::FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
+        .if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR loadcmpdun, #diskio::status::FILE_NOT_FOUND            
             cmp #diskio::status::FILE_NOT_FOUND
         .else
+            MAYBE_IGNORE_ILLEGAL_TRACK_OR_SECTOR loadcmpdun, #diskio::status::INVALID_PARAMETERS            
             cmp #diskio::status::INVALID_PARAMETERS
         .endif
             jne error
-            MEMCONFIG_CHECK
+loadcmpdun: MEMCONFIG_CHECK
     .endif
 .endif; LOAD_COMPD_API
 
@@ -2309,8 +2452,44 @@ statlen = * + 1
             jsr CHROUT
             dex
             bne :-
-:
+:           POP_MEMCONFIG
+            rts
+
+            ; debug printout, called from resident loader code
+            ; in: a - value to print
+            ;     x - x-coordinate
+            .export PRINTHEX
+
+PRINTHEX:   sta hexvalue
+
+            php
+            pha
+            txa
+            pha
+            tya
+            pha
+            PUSH_MEMCONFIG_AND_ENABLE_ALL_ROM
+
+           ;ldx #xcoord
+            ldy #$01
+            jsr setplotxy
+
+hexvalue = * + $01
+            lda #$00
+            jsr gethex
+            pha
+            txa
+            jsr CHROUT
+            pla
+            jsr CHROUT
+            
             POP_MEMCONFIG
+            pla
+            tay
+            pla
+            tax
+            pla
+            plp
             rts
 
 error:      sei
@@ -3468,11 +3647,6 @@ diffcycles: jsr readcycles
             lda #$00
             sta numcycles + $03
 
-            asl numcycles + $00
-            rol numcycles + $01
-            rol numcycles + $02
-            rol numcycles + $03
-
             sec
             lda numcycles + $00
 adjustdiff = * + $01
@@ -3575,18 +3749,22 @@ irq2:       lda IO_PORT
 
     .if LOAD_TO_UPPER_MEM
             lda #$fa
-:           cmp VIC2_RASTERLINE
+:           bit VIC2_CTRL1
+            bmi :+
+            cmp VIC2_RASTERLINE
             bcs :-
-
+:
             lda #VIC2_MAKE_ADDR SPRITESCR, BITMAP
             sta VIC2_ADDR
             SET_VIC_BANK VIC2_MAKE_BANK SPRITES
     .endif
 
             lda #$fb
-:           cmp VIC2_RASTERLINE
+:           bit VIC2_CTRL1
+            bmi :+
+            cmp VIC2_RASTERLINE
             bcs :-
-
+:
             lda #BITMAP_MODE | DISPLAY_ENABLE | LINES_25 | SCROLLY_3; $3b
             sta VIC2_CTRL1; set 25 rows bit
             lda #SINGLECOLOUR_MODE | COLUMNS_40 | SCROLLX_0; $08
@@ -3610,6 +3788,7 @@ irqend:     sta VIC2_RASTERLINE
             sta IO_PORT
 
             and #%00111111; mask off the upper 2 bits (C-128 ASCII/DIN and Flash8 clock control bits)
+            ora #CASSETTE_SENSE; this is 0 on SX-64
 
 memcfgchks = * + $01
             ldx #$00
@@ -3757,11 +3936,11 @@ ntsctext:   scrcode "NTSC"
             .byte $00
 
 drivemsgsl: .byte .lobyte(msg1541), .lobyte(msg1541c), .lobyte(msg1541ii), .lobyte(msggeneric); 1551
-            .byte .lobyte(msg1570), .lobyte(msg1571), .lobyte(msg1571cr), .lobyte(msg1581)
+            .byte .lobyte(msg1570), .lobyte(msg1571), .lobyte(msg1571cr), .lobyte(msg1581), .lobyte(msgfd2000), .lobyte(msgfd4000)
             .byte .lobyte(msggeneric)
 
 drivemsgsh: .byte .hibyte(msg1541), .hibyte(msg1541c), .hibyte(msg1541ii), .hibyte(msggeneric); 1551
-            .byte .hibyte(msg1570), .hibyte(msg1571), .hibyte(msg1571cr), .hibyte(msg1581)
+            .byte .hibyte(msg1570), .hibyte(msg1571), .hibyte(msg1571cr), .hibyte(msg1581), .hibyte(msgfd2000), .hibyte(msgfd4000)
             .byte .hibyte(msggeneric)
 
 msg1541:    .byte PETSCII_YELLOW, "CBM 1541", 0
@@ -3771,14 +3950,16 @@ msg1570:    .byte PETSCII_YELLOW, "CBM 1570", 0
 msg1571:    .byte PETSCII_YELLOW, "CBM 1571", 0
 msg1571cr:  .byte PETSCII_YELLOW, "CBM 1571CR", 0
 msg1581:    .byte PETSCII_YELLOW, "CBM 1581", 0
+msgfd2000:  .byte PETSCII_YELLOW, "CBM FD 2000", 0
+msgfd4000:  .byte PETSCII_YELLOW, "CBM FD 4000", 0
 msggeneric: .byte PETSCII_YELLOW, "generic drive", 0
 
 drivtypesl: .byte .lobyte(str1541), .lobyte(str1541c), .lobyte(str1541ii), .lobyte(msggeneric); 1551
-            .byte .lobyte(str1570), .lobyte(str1571), .lobyte(str1571cr), .lobyte(str1581)
+            .byte .lobyte(str1570), .lobyte(str1571), .lobyte(str1571cr), .lobyte(str1581), .lobyte(strfd2000), .lobyte(strfd4000)
             .byte .lobyte(strgeneric)
 
 drivtypesh: .byte .hibyte(str1541), .hibyte(str1541c), .hibyte(str1541ii), .hibyte(msggeneric); 1551
-            .byte .hibyte(str1570), .hibyte(str1571), .hibyte(str1571), .hibyte(str1581)
+            .byte .hibyte(str1570), .hibyte(str1571), .hibyte(str1571), .hibyte(str1581), .hibyte(strfd2000), .hibyte(strfd4000)
             .byte .hibyte(strgeneric)
 
 str1541:    scrcode "CBM1541"
@@ -3794,6 +3975,10 @@ str1571:    scrcode "CBM1571"
 str1571cr:  scrcode "CBM1571CR"
             .byte $00
 str1581:    scrcode "CBM1581"
+            .byte $00
+strfd2000:  scrcode "CMDFD2000"
+            .byte $00
+strfd4000:  scrcode "CMDFD4000"
             .byte $00
 strgeneric: scrcode "generic"
             .byte $00
@@ -3900,6 +4085,8 @@ paramoffst: .byte diskio::drivetype::DRIVES_1541        ; 1541
             .byte diskio::drivetype::DRIVES_157X - 1    ; 1571
             .byte diskio::drivetype::DRIVES_157X - 1    ; 1571CR
             .byte diskio::drivetype::DRIVES_1581_CMD - 1; 1581
+            .byte diskio::drivetype::DRIVES_1581_CMD - 1; CMD FD 2000
+            .byte diskio::drivetype::DRIVES_1581_CMD - 1; CMD FD 4000
             .byte diskio::drivetype::DRIVES_1581_CMD - 1; generic drive
 
 xshebaunpt: .byte X_SHEBA_UNCOMPRESSED_1541

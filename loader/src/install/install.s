@@ -9,14 +9,16 @@ __NO_LOADER_SYMBOLS_IMPORT = 1
 
 .include "cpu.inc"
 .include "cia.inc"
+.include "basic.inc"; for PETSCII_RETURN
 .include "kernal.inc"
 .if NONBLOCKING_API & (PLATFORM <> diskio::platform::COMMODORE_16)
     .include "vic.inc"
 .endif
 
-VIA2_T1L_H = $1c07; including via.inc would redefine several symbols from cia.inc,
-                  ; this symbol is used for the fast head stepping m-w for seeking
-                  ; using plain KERNAL routines
+; including via.inc would redefine several symbols from cia.inc
+VIA2_T1L_H = $1c07; this symbol is used for the fast head stepping m-w for seeking using plain KERNAL routines
+VIA_T1C_H  = $1c05; this symbol is used for watchdog servicing on CMD FD
+
 
 .include "hal/hal.inc"
 
@@ -25,6 +27,15 @@ VIA2_T1L_H = $1c07; including via.inc would redefine several symbols from cia.in
 .import c1570fix0
 .import c1570fix1
 .import c1570fix2
+
+.import cmdfdfix0
+.import cmdfdfix1
+.import cmdfdfix2
+.import cmdfdfix3
+.import cmdfdfix4
+
+
+USE_GENERIC_DRIVE = 0
 
 
 .macro itoa4 value
@@ -156,9 +167,11 @@ install:
 
 .if PROTOCOL = PROTOCOLS::TWO_BITS_ATN
             ; check if there is more than 1 drive on the serial bus,
-            ; to make sure the 2bit+ATN protocol can work alright;
+            ; to make sure the 2bit+ATN protocol can work alright,
             ; this is done via the low-level serial bus routines,
             ; so non-serial bus devices won't respond
+            ; (1551 on Plus/4 does respond though, so a little extra
+            ; treatment is done through the drive disturbance HAL macros)
 
             ldx #MIN_DEVICE_NO
 checkbus:   stx FA
@@ -200,6 +213,9 @@ nodrive:    jsr UNLSTN
             bne checkbus
 .endif; PROTOCOL <> PROTOCOLS::TWO_BITS_ATN
 
+            ; find first available drive,
+            ; this is done via the high-level open/read/close routines,
+            ; so non-serial bus devices will also respond
             lda #diskio::status::OK
             sta STATUS
             pla; current drive
@@ -208,14 +224,21 @@ nodrive:    jsr UNLSTN
 .endif; PROTOCOL <> PROTOCOLS::TWO_BITS_ATN
             ; find first available drive
             sta FA
-:           pha; device number
-            jsr drvlistn
-            jsr READST
-            pha
-            jsr UNLSTN
-            pla
-            bpl :++; drive present
+find1stdrv: pha; device number
+            lda #drvchkmr - drvchkon
+            ldx #.lobyte(drvchkon)
+            ldy #.hibyte(drvchkon)
+            jsr SETNAM
+            lda #COMMAND_ERROR_CHANNEL
+            ldx FA
+            tay
+            jsr SETLFS
+            jsr OPEN
+            bcc drivefound; drive present
             ; drive not present, try next address
+            lda #COMMAND_ERROR_CHANNEL
+            jsr CLOSE
+            jsr CLRCHN
             ldx FA
             inx
             cpx #MAX_DEVICE_NO + 1
@@ -224,7 +247,7 @@ nodrive:    jsr UNLSTN
 :           stx FA
             pla
             cmp FA
-            bne :--
+            bne find1stdrv
 
             plp; i-flag restore
             lda #diskio::status::DEVICE_NOT_PRESENT
@@ -233,7 +256,17 @@ nodrive:    jsr UNLSTN
             sec
             rts
 
-:           pla; device number
+drivefound: ; read error channel to stop potentially blinking error LED
+            ldx #COMMAND_ERROR_CHANNEL
+            jsr CHKIN
+:           jsr CHRIN
+            cmp #PETSCII_RETURN
+            bne :-
+            lda #COMMAND_ERROR_CHANNEL
+            jsr CLOSE
+            jsr CLRCHN
+
+            pla; device number
 
 .if GENERIC_INSTALL
 
@@ -265,8 +298,11 @@ nodrive:    jsr UNLSTN
             ldx #.hibyte($0300)
             jsr memreadbyt
             cmp drvchkval
-            bne nocompat
+            bne usegeneric
             
+    .if USE_GENERIC_DRIVE
+            jmp usegeneric
+    .endif
             ; check which model the drive is and upload corresponding drive code
 
             ; check if running on a 1541/70/71 compatible drive
@@ -280,22 +316,50 @@ nodrive:    jsr UNLSTN
             beq is157x
 
             ; neither 1541 nor 157x
-            ; try 1581
-            lda #.lobyte($a6e9)
+            
+            ; try fd2000/fd4000
+            lda #.lobyte($fea4)
+            ldx #.hibyte($fea4)
+            jsr memreadbyt
+            cmp #'f'
+            bne check1581
+            lda #OPC_BIT_ABS
+            sta cmdfdfix0 - cbm1581::drvcodebeg81 + cbm1581::drivecode81
+            lda #.lobyte($54); DIRTRACKFD
+            sta cmdfdfix1 - cbm1581::drvcodebeg81 + cbm1581::drivecode81
+            lda #.hibyte($54); DIRTRACKFD
+            sta cmdfdfix2 - cbm1581::drvcodebeg81 + cbm1581::drivecode81
+            lda #.lobyte($fef0)
+            ldx #.hibyte($fef0)
+            jsr memreadbyt
+            ldy #diskio::drivetype::DRIVE_CMD_FD_2000
+            cmp #'4'
+            bne isfd2000
+            iny; diskio::drivetype::DRIVE_CMD_FD_4000
+isfd2000:   lda #$ff
+            ldx #.lobyte(VIA_T1C_H)
+            bne iscmdfd; jmp
+
+            ; check if 1581
+check1581:  lda #.lobyte($a6e9)
             ldx #.hibyte($a6e9)
             jsr memreadbyt
             ldy #diskio::drivetype::DRIVE_1581
             cmp #'8'
             beq is1581
 
-nocompat:   ; no compatible drive found
+usegeneric: ; no compatible drive found
     .if LOAD_VIA_KERNAL_FALLBACK & LOAD_ONCE
             jsr openfile; exception on error
     .endif
 
             plp; i-flag restore
             lda #diskio::status::DEVICE_INCOMPATIBLE
+    .if diskio::status::DEVICE_INCOMPATIBLE = diskio::drivetype::DRIVE_GENERIC
+            tax
+    .else
             ldx #diskio::drivetype::DRIVE_GENERIC
+    .endif
             ldy #BLOCKDESTLO
     .if LOAD_VIA_KERNAL_FALLBACK
             clc; this is not to be regarded as an error
@@ -306,29 +370,29 @@ nocompat:   ; no compatible drive found
 
             ; select appropriate drive code
 
-is1541:     ; find out if 1541 or 1541-C, or 1541-II
+is1541:     ; find out if 1541, or 1541-C/1541-II
+            lda #.lobyte($eaa3); is $fe only with 1541-C,
+            ldx #.hibyte($eaa3); where it defines the data direction for
+            jsr memreadbyt     ; the pin connected to the track 0 sensor
+            ldy #diskio::drivetype::DRIVE_1541_C
+            cmp #$fe
+            beq selectdcod; branch if 1541-C
+            ; 1541 or 1541-II
             lda #.lobyte($c002)
             ldx #.hibyte($c002)
             jsr memreadbyt
             ldy #diskio::drivetype::DRIVE_1541
             cmp #'c'
-            bne selectdcod
-            ; find out if 1541-C or 1541-II
-            lda #.lobyte($eaa3)
-            ldx #.hibyte($eaa3)
-            jsr memreadbyt
-            ldy #diskio::drivetype::DRIVE_1541_C
-            cmp #$ff
-            bne selectdcod
-            iny; diskio::drivetype::DRIVE_1541_II
-            bne selectdcod; jmp
+            bne selectdcod; 1541: branch if no 'c' at $c002 (from 'COPYRIGHT' etc.)
+            ldy #diskio::drivetype::DRIVE_1541_II
+            bne selectdcod; jmp; 1541-II: 'c' at $c002 (from 'COPYRIGHT' etc.)
 
             ; find out if 1570 or 1571
 is157x:     cpx #'1' | $80; 71
             lda #OPC_BIT_ZP
             ldx #OPC_BIT_ABS; no VIA2_PRA writes to switch sides
             ldy #diskio::drivetype::DRIVE_1570
-            bcc :+
+            bcc :+; branch if 1570
             ; 1571 or 1571CR
             jsr chk2sidedx
             lda #.lobyte($e5c2)
@@ -346,7 +410,17 @@ is157x:     cpx #'1' | $80; 71
 
             ; fall through
 
-is1581:
+is1581:     lda #OPC_JMP_ABS
+            sta cmdfdfix0 - cbm1581::drvcodebeg81 + cbm1581::drivecode81
+            lda #.lobyte($022b); DIRTRACK81
+            sta cmdfdfix1 - cbm1581::drvcodebeg81 + cbm1581::drivecode81
+            lda #.hibyte($022b); DIRTRACK81
+            sta cmdfdfix2 - cbm1581::drvcodebeg81 + cbm1581::drivecode81
+            lda #COUNT_TA_UNDF | FORCE_LOAD | ONE_SHOT | TIMER_START
+            ldx #.lobyte(CIA_CRB)
+iscmdfd:    sta cmdfdfix3 - cbm1581::drvcodebeg81 + cbm1581::drivecode81
+            stx cmdfdfix4 - cbm1581::drvcodebeg81 + cbm1581::drivecode81
+
 
 selectdcod: sty drivetype
             ldx dcodeseltb - diskio::drivetype::DRIVE_1541,y
@@ -657,6 +731,8 @@ chk2sidedx: jsr drvlistn
 
 no1571:     rts
 
+drvchkon:   .byte "m-r", .lobyte($0300), .hibyte($0300)
+
 drvchkmr:   .byte "m-r", $00, $00, $02; read forward
 drvchkmw:   .byte "m-w", .lobyte($0300), .hibyte($0300), drvchkme - drvchkcd; read forward
 drvchkval = * + $01
@@ -679,7 +755,7 @@ twosided:   .byte "1m>0u"; read backward
 dcodeseltb: .byte diskio::drivetype::DRIVES_1541    , diskio::drivetype::DRIVES_1541    , diskio::drivetype::DRIVES_1541    ; drivecode1541 for 1541, 1541-C, 1541-II
             .byte 0; 1551
             .byte diskio::drivetype::DRIVES_157X - 1, diskio::drivetype::DRIVES_157X - 1, diskio::drivetype::DRIVES_157X - 1; drivecode1571 for 1570, 1571, 1571CR
-            .byte diskio::drivetype::DRIVES_1581_CMD - 1                                                                    ; drivecode1581 for 1581
+            .byte diskio::drivetype::DRIVES_1581_CMD - 1, diskio::drivetype::DRIVES_1581_CMD - 1, diskio::drivetype::DRIVES_1581_CMD - 1; drivecode1581 for 1581, FD2000, FD4000
 
 dcodeselt0: .byte .lobyte(cbm1541::dinstall  - cbm1541::drvcodebeg41 + cbm1541::drivecode41)
             .byte .lobyte(cbm1571::drivebusy71 - cbm1571::drvcodebeg71 + cbm1571::drivecode71)

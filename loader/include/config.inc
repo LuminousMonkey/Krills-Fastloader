@@ -2,7 +2,7 @@
 ; configuration
 ; set .defines to non-0 to enable the corresponding features
 
-; BEWARE:
+; Note:
 ;   Please keep in mind that most of the following parameters change the code size.
 ;   For a minimum-size resident portion in the host's memory,
 ; set all parameters in the 'increase code size' section to 0,
@@ -61,7 +61,7 @@ FILESYSTEM                         = FILESYSTEMS::DIRECTORY_NAME; currently avai
                                      ; however, the drive hardware (1541 and 1571) only allows for a maximum time-out period of 65536 cycles: this means
                                      ; that letting the loader starve for a few video frames (about 1.5 frames since the time-out is often just 32768
                                      ; cycles due to size optimization) will reset the drive, which can be prevented using this option.
-                                     ; Note: On Plus/4, this option must be enabled for VICE compatibility, as VICE suffers from spurious watchdog interrupts.                                     
+                                     ; Note: On Plus/4, this option must be enabled for VICE compatibility, as VICE suffers from spurious watchdog interrupts.
 
 
 ; following settings are independent from the installed drive code,  several host-side
@@ -82,7 +82,7 @@ FILESYSTEM                         = FILESYSTEMS::DIRECTORY_NAME; currently avai
                                      ; this feature affects the loading address of compressed data when loading using loadcompd,
                                      ; it does not affect the address of the decompressed data
 
-.define END_ADDRESS_API            1 ; after loading, the file's end address (last file byte + 1) is stored in endaddrlo and endaddrhi.
+.define END_ADDRESS_API            0 ; after loading, the file's end address (last file byte + 1) is stored in endaddrlo and endaddrhi.
                                      ; for loading compressed files using loadcompd, the end address of the compressed data is returned.
                                      ; (the file's loading address can always be found in loadaddrlo/loadaddrhi after loading)
 
@@ -150,16 +150,15 @@ FILESYSTEM                         = FILESYSTEMS::DIRECTORY_NAME; currently avai
                                      ; the handler code is delayed a little when being called via $0314 rather than $FFFE).
                                      ; requires FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
 
-.define LOAD_PROGRESS_API          1 ; keeps updating bytesloadedlo/hi while loading with the amount
+.define LOAD_PROGRESS_API          0 ; keeps updating bytesloadedlo/hi while loading with the amount
                                      ; of bytes that have been loaded (not decompressed!) so far;
                                      ; to be used for progress displays
 
 .define IDLE_BUS_LOCK              1 ; C-64 only: allow for arbitrary $DD00 writes ($00-$FF) when the loader
                                      ; is idle (good for raster routines with LDA #value:STA $D018:STA $DD00, e.g.),
-                                     ; the writes must have a minimum distance of 15 µs (i.e., 15 cycles at 1 MHz).
+                                     ; the writes must have a minimum distance of 15 Âµs (i.e., 15 cycles at 1 MHz).
                                      ; however, if one of these $DD00 writes enables the ATN OUT bit
                                      ; (bit 3 in $DD00), only one device on the bus is allowed for all protocols.
-                                     ; Plus/4: similar effect, but on $01 instead of $DD00
 
 .define NONBLOCKING_API            1 ; include non-blocking calls, so it is possible to run code in the main thread while timer NMIs are used
                                      ; to poll and download the blocks - the loader works in interrupt handlers instead of the main thread

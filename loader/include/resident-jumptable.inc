@@ -14,7 +14,11 @@
 ;------------------------------------------------------------------------------
 
 .macro DEFAULT_INTERRUPT_RESIFEATS
-    ; screen on, interrupts may be delayed, no nmis allowed, no sprites in non-irq space, is usually sufficient for applications
+    ; import constraints: screen on, interrupts may be delayed, no nmis allowed, no sprites in non-irq space, is usually sufficient for applications
+    ; however, this loader does not impose any restrictions on sprite, IRQ, or DMA usage when PROTOCOL = PROTOCOLS::TWO_BITS_ATN, so
+    ; ARBITRARY_INTERRUPTS       = 4     ; screen on, no interrupt delays, nmis allowed, no sprite limitations
+    ; is exported as offered feature (see below)
+
     .byte diskio::INTERRUPT_CONSTRAINTS, diskio::INTERRUPTS_POSSIBLE
     .if PLATFORM = diskio::platform::COMMODORE_16
     .out "  interrupts may be delayed, no interrupts used"    

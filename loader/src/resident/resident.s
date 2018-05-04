@@ -48,7 +48,7 @@ CHUNKENDLO                  = GETCHUNK_VARS + $07
 CHUNKENDHI                  = GETCHUNK_VARS + $08
 .endif
 
-.if ::FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
+.if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
 DEVICE_NOT_PRESENT          = $00
 .else
 DEVICE_NOT_PRESENT          = $01
@@ -58,7 +58,7 @@ SPECIAL_BLOCK_NOS           = $fe; $fe and $ff
 LOAD_FINISHED               = $fe; loading finished successfully
 LOAD_ERROR                  = $ff; file not found or illegal track or sector
 
-.if PLATFORM <> diskio::platform::COMMODORE_64
+.if PLATFORM = diskio::platform::COMMODORE_16
 LOAD_MODULE_WAITREADY_DELAY = $0c
 .else
 LOAD_MODULE_WAITREADY_DELAY = $07
@@ -219,6 +219,7 @@ jsrdecomp:  jsr decompress
     .else
             jsr decompress
     .endif; CHAINED_COMPD_FILES
+
             ; decompression is finished
 
             lda getcmemadr + $02
@@ -351,7 +352,7 @@ pseiclisw3: cli
             beq ptrkchan
             SET_TIMER(POLLINGINTERVAL_GETBLOCK)
             jmp :+
-ptoirqspnd:  jmp pirqspendg
+ptoirqspnd: jmp pirqspendg
 ptrkchan:   SET_TIMER(POLLINGINTERVAL_TRACKCHANGE)
 :           SET_IRQ_VECTOR(pollirqdly)
             ACK_TIMER_IRQ
@@ -458,17 +459,26 @@ openfile:
 .if LOAD_UNDER_D000_DFFF & (PLATFORM <> diskio::platform::COMMODORE_16)
             GET_MEMCONFIG
             sta memconfig + $01
+            GOT_MEMCONFIG = 1
+.else
+            GOT_MEMCONFIG = 0
 .endif
 
 .if LOAD_VIA_KERNAL_FALLBACK
+
+USE_WAITREADY_KERNAL = 1
+
+    .if !GOT_MEMCONFIG
             GET_MEMCONFIG
+    .endif
             sta kernaloff + $01
 
             BRANCH_IF_NOT_INSTALLED ldrnotinst
             jmp nofallback
 
             ; loader is not installed,
-            ; load via KERNAL calls
+            ; so load via KERNAL calls
+
 ldrnotinst: ENABLE_KERNAL_SERIAL_ROUTINES
 
     .if BYTESTREAM
@@ -493,9 +503,15 @@ ldrnotinst: ENABLE_KERNAL_SERIAL_ROUTINES
 :           jsr READST
             plp
             tax
+
     .else; !LOAD_ONCE
 
             stx namestrpos + $00
+
+        .if USE_WAITREADY_KERNAL
+            ENABLE_WAITBUSY_KERNAL
+        .endif
+
         .if LOAD_PROGRESS_API | BYTESTREAM
             ldy BLOCKINDEX; get buffered parameter
         .endif
@@ -535,6 +551,7 @@ openfail:   ldy kernaloff + $01
 
 fileopen:   ldx #KERNALFILENO
             jsr CHKIN
+
             ; file not found is not detected at this point
             ; but the kernalgbyt function will return an error
             ; when trying to get the first file data byte
@@ -563,8 +580,9 @@ kernopenok:
     .if GETC_API | GETCHUNK_API
             lda kernaloff + $01
             SET_MEMCONFIG
-    .endif
+    .endif    
             jmp fopenok
+
 nofallback:
 
 .endif; LOAD_VIA_KERNAL_FALLBACK
@@ -675,6 +693,14 @@ dorts:      rts
             ;      a - status
 
             ; C-64: When LOAD_UNDER_D000_DFFF is non-0, this call assumes that the IO space at $d000 is enabled.
+
+.if LOAD_VIA_KERNAL_FALLBACK
+kernlgberr: cmp #diskio::status::EOF
+            beq kernalbeof; carry is set on branch
+            sec
+            rts
+.endif
+
 .ifdef pollblock
 pollblock2:
 .else
@@ -684,29 +710,31 @@ pollblock:
 _pollblock:
 
 .if LOAD_VIA_KERNAL_FALLBACK
+
+LOAD_UNDER_E000_FFFF = 1
+
             BRANCH_IF_INSTALLED getblnofbk
 
             ENABLE_KERNAL_SERIAL_ROUTINES
 
-            ldx #$fe
+            ldx #$fe; $0100 bytes minus 2 bytes for track/sector link
 kernalgblk: jsr kernalgbyt
-            bcc :+
-            cmp #diskio::status::EOF
-            beq kernalbeof; carry is set on branch
-            sec
-            rts
-:
-    .if (!LOAD_UNDER_D000_DFFF) & (PLATFORM <> diskio::platform::COMMODORE_16)
-            ENABLE_IO_SPACE_Y
-    .else
-            ENABLE_ALL_RAM_Y
-    .endif
+            bcs kernlgberr
 
+    .if LOAD_UNDER_E000_FFFF | (PLATFORM <> diskio::platform::COMMODORE_16)
+        .if (!LOAD_UNDER_D000_DFFF) & (PLATFORM <> diskio::platform::COMMODORE_16)
+            ENABLE_IO_SPACE_Y
+        .else
+            ENABLE_ALL_RAM_Y
+        .endif
+    .endif
             ldy #$00
             sta (LOADDESTPTR),y
 
+    .if LOAD_UNDER_E000_FFFF | (PLATFORM <> diskio::platform::COMMODORE_16)
             ENABLE_KERNAL_SERIAL_ROUTINES_Y
-
+    .endif
+            
             inc LOADDESTPTR + $00
             bne :+
             inc LOADDESTPTR + $01
@@ -745,7 +773,7 @@ evalerr:
             cmp #LOAD_FINISHED; $fe
             beq returnok; returns with carry set
             clc
-.if ::FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
+.if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
             ; accu = $ff (LOAD_ERROR) -> diskio::status::FILE_NOT_FOUND ($fb)
             ; accu = $00 (DEVICE_NOT_PRESENT) -> diskio::status::DEVICE_NOT_PRESENT ($fc)
             adc #diskio::status::DEVICE_NOT_PRESENT; $fc
@@ -772,6 +800,24 @@ getblock:   lda #DEVICE_NOT_PRESENT
             END_ATN_STROBE
 
             jsr get1byte; get block index or error/eof code
+
+            ; when enabling this, the PRINTHEX symbol must be marked as an import in the dynlink library -
+            ; uncomment the PRINTHEX import line in ../Makefile for this purpose.
+            ; note: currently collides with C-64 memory config check, so use C-16 for debugging
+DEBUG_BLOCKLOAD = 0
+
+.if DEBUG_BLOCKLOAD
+            .import PRINTHEX
+
+            pha
+            lda #$ff
+            ldx #$08
+            jsr PRINTHEX
+            pla
+            ldx #$00
+            jsr PRINTHEX            
+.endif; DEBUG_BLOCKLOAD
+
             sta BLOCKINDEX
 
 .if BYTESTREAM
@@ -786,9 +832,21 @@ getblock:   lda #DEVICE_NOT_PRESENT
             jsr get1byte; block size
             pha
             jsr get1byte; load address lo
+
+.if DEBUG_BLOCKLOAD
+            ldx #$04
+            jsr PRINTHEX
+.endif; DEBUG_BLOCKLOAD
+            
 storeladrl: sta loadaddrlo; is changed to lda on load_to
             sta BLOCKDESTLO
             jsr get1byte; load address hi
+
+.if DEBUG_BLOCKLOAD
+            ldx #$02
+            jsr PRINTHEX
+.endif; DEBUG_BLOCKLOAD
+
 storeladrh: sta loadaddrhi; is changed to lda on load_to
             sta storebyte + $02
 
@@ -819,9 +877,13 @@ not1stblk:  cmp #SPECIAL_BLOCK_NOS; check for special block numbers: LOAD_FINISH
             sbc #$01
             sta storebyte + $02
 
-            jsr get1byte; get block size
+            jsr get1byte; get block size - 1
 
 fin1stblk:
+.if DEBUG_BLOCKLOAD
+            ldx #$06
+            jsr PRINTHEX
+.endif; DEBUG_BLOCKLOAD
 
 .if MAINTAIN_BYTES_LOADED
             pha; block size - 1
@@ -833,9 +895,9 @@ fin1stblk:
 :           pla; block size - 1
 .endif
             ; a contains block size - 1
-    .if BYTESTREAM
+.if BYTESTREAM
             sta blocksize
-    .endif
+.endif
 
 .if LOAD_UNDER_D000_DFFF & (PLATFORM <> diskio::platform::COMMODORE_16)
             ldy #OPC_LDX_IMM; enable getbyte loop
@@ -853,7 +915,7 @@ get1byte:   ldy #OPC_RTS; disable getbyte loop
 .else
             cpy #OPC_STA_ABSY
 .endif
-            bne getblkloop
+            bne getblkloop; branch if get1byte            
             tay; 0 - block size
            ;sec
             txa
@@ -892,8 +954,19 @@ memconfig:  ldx #$00
             stx endaddrlo
             sty endaddrhi
 :
-.endif
+.endif; END_ADDRESS
+
+.if DEBUG_BLOCKLOAD
+            sec
+    .if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
+            lda #diskio::status::INTERNAL_ERROR - diskio::status::DEVICE_NOT_PRESENT
+    .else
+            lda #diskio::status::INTERNAL_ERROR - diskio::status::DEVICE_NOT_PRESENT + 1
+    .endif
+            ldy BLOCKINDEX
+.else; !DEBUG_BLOCKLOAD
             clc; ok
+.endif; !DEBUG_BLOCKLOAD
 
 polldone:   ENDGETBLOCK
             rts
@@ -988,22 +1061,27 @@ getckernal: sty LOADYBUF
             ; out : a - status on error
             ;     : c - set on error
 kernalgbyt: jsr READST; get KERNAL status byte
-            bne :+
+            bne kernalerr
     .if MAINTAIN_BYTES_LOADED
             inc bytesloadedlo
             bne @0
             inc bytesloadedhi
 @0:
     .endif
+    
+    .if USE_WAITREADY_KERNAL
+            WAITREADY_KERNAL
+    .endif
             jsr CHRIN
             clc
             rts
 
             ; EOF or error, close file
-:           pha; KERNAL status byte
+kernalerr:  pha; KERNAL status byte
             lda #KERNALFILENO
             jsr CLOSE
             jsr CLRCHN
+
     .if END_ADDRESS_API
         .if MAINTAIN_BYTES_LOADED
             clc
@@ -1020,33 +1098,41 @@ kernalgbyt: jsr READST; get KERNAL status byte
             sta endaddrhi
         .endif
     .endif; !END_ADDRESS_API
+
 kernaloff:  lda #$00
             SET_MEMCONFIG
             pla; KERNAL status byte
             cmp #KERNAL_STATUS_EOF
-            bne kernalerr
+            bne kernaloerr
             ; EOF
             lda #diskio::status::EOF
            ;sec
             rts
-kernalerr:  sec
+kernaloerr: sec
             tax
-            bmi :++
-            and #KERNAL_STATUS_FILE_NOT_FOUND
-            beq :+
+            bpl :+; branch if not illegal track or sector, or device not present
+            cmp #KERNAL_STATUS_ILLEGAL_TRACK_OR_SECTOR
+            beq kernillts
+            bne kerndevnp
+:           and #KERNAL_STATUS_FILE_NOT_FOUND
+            beq kerngenerc; branch if error not known, generic KERNAL error
     .if EXCEPTIONS
-            lda #diskio::status::FILE_NOT_FOUND
+            lda #diskio::status::FILE_NOT_FOUND; this is also returned if the file starts on an illegal track or sector
             SKIPWORD
-:           lda #diskio::status::GENERIC_KERNAL_ERROR
+kernillts:  lda #diskio::status::ILLEGAL_TRACK_OR_SECTOR
             SKIPWORD
-:           lda #diskio::status::DEVICE_NOT_PRESENT
+kerndevnp:  lda #diskio::status::DEVICE_NOT_PRESENT
+            SKIPWORD
+kerngenerc: lda #diskio::status::GENERIC_KERNAL_ERROR
             jmp maybethrow
     .else; !EXCEPTIONS
-            lda #diskio::status::FILE_NOT_FOUND
+            lda #diskio::status::FILE_NOT_FOUND; this is also returned if the file starts on an illegal track or sector
             rts
-:           lda #diskio::status::GENERIC_KERNAL_ERROR
+kernillts:  lda #diskio::status::ILLEGAL_TRACK_OR_SECTOR
             rts
-:           lda #diskio::status::DEVICE_NOT_PRESENT
+kerndevnp:  lda #diskio::status::DEVICE_NOT_PRESENT
+            rts
+kerngenerc: lda #diskio::status::GENERIC_KERNAL_ERROR
             rts
     .endif; !EXCEPTIONS
 

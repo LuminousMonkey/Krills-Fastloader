@@ -38,4 +38,8 @@ _HAL_INC_ = 1
 :           BRANCH_IF_NOT_READY :-
 .endmacro
 
+.macro WAITREADY_KERNAL
+:           BRANCH_IF_CLK_IN_CLEAR :-
+.endmacro
+
 .endif; !_HAL_INC_
