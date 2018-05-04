@@ -1948,6 +1948,20 @@ loadrwdone: MEMCONFIG_CHECK
             jsr waitvbl
             inc BORDERCOLOUR
 
+    .if ONLY_1541_AND_COMPATIBLE
+    
+        .if DYNLINK_IMPORT
+            .if JUMP_TABLE
+            UPLOAD_DRIVECODE_1541 drivecode41 - DYNLINKOVERHEAD
+            .else
+            UPLOAD_DRIVECODE_1541 drivecode41 - DYNLINKOVERHEAD + INSTALLJUMPTABLESIZE
+            .endif
+        .else
+            UPLOAD_DRIVECODE_1541 drivecode41
+        .endif
+
+    .else; ONLY_1541_AND_COMPATIBLE = 0
+
             lda DRIVETYPE
             cmp #diskio::drivetype::DRIVE_1570
             beq upload1571
@@ -1985,12 +1999,14 @@ upload1581: UPLOAD_DRIVECODE_1581 drivecode81
         .endif
 
 postupload:
+    .endif; ONLY_1541_AND_COMPATIBLE = 0
+
 :           BRANCH_IF_CLK_IN_SET :-
             INSTALL_IDLE
 
             jsr waitvbl
             dec BORDERCOLOUR
-    .endmacro
+    .endmacro; RUNDRIVECODE
 
             RUNDRIVECODE
 

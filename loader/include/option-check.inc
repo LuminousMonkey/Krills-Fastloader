@@ -44,6 +44,18 @@ _OPTION_CHECK_INC_ = 1
     .error "***** Option LOAD_VIA_KERNAL_FALLBACK requires FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME *****"
 .endif
 
+.if LOAD_VIA_KERNAL_FALLBACK & ONLY_1541_AND_COMPATIBLE
+    .error "***** Option LOAD_VIA_KERNAL_FALLBACK requires ONLY_1541_AND_COMPATIBLE = 0 *****"
+.endif
+
+.if LOAD_ONCE & (DIRTRACK <> 18)
+    .error "***** Option LOAD_ONCE requires DIRTRACK to be 18 *****"
+.endif
+
+.if LOAD_ONCE & (DIRSECTOR <> 0)
+    .error "***** Option LOAD_ONCE requires DIRSECTOR to be 0 *****"
+.endif
+
 .if LOAD_ONCE & (FILESYSTEM <> FILESYSTEMS::DIRECTORY_NAME)
     .error "***** Option LOAD_ONCE requires FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME *****"
 .endif

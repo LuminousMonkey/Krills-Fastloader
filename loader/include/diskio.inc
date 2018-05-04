@@ -276,46 +276,50 @@ FILENAME_MAX                 =  138 ; requires FILE_IDENTIFICATION = NAME, if FI
                                     ; the extra chars of the file name on disk are ignored
 
 ; if a filename in the directory is longer than FILENAME_MAX, only match on the first characters
-IGNORES_EXTRA_CHARS          =  139; requires FILE_IDENTIFICATION = NAME, not specified implies extra chars are not ignored
+IGNORES_EXTRA_CHARS          =  139 ; requires FILE_IDENTIFICATION = NAME, not specified implies extra chars are not ignored
  DOES_IGNORE_EXTRA_CHARS    = 0
 
+; if specifying a zero-length filename, load the next file in the directory
+EMPTY_FILENAME_IS_NEXT_FILE  =  140 ; requires FILE_IDENTIFICATION = NAME, not specified implies undefined behaviour on zero-length filename
+ NEXT_FILE_ON_ZERO_LENGTH   = 0
+
 ; how many first files in a directory may be accessed
-FIRST_FILES_ACCESSIBLE       =  140; requires FILE_IDENTIFICATION = NAME, must be specified
- NO_FIRST_FILES_LIMITATION  = 144; number of files to be stored on a disk
+FIRST_FILES_ACCESSIBLE       =  141 ; requires FILE_IDENTIFICATION = NAME, must be specified
+ NO_FIRST_FILES_LIMITATION  = 144   ; number of files to be stored on a disk
 
 ; maximum number of files open at the same time
-MAX_OPEN                     =  141
+MAX_OPEN                     =  142
 
 ; wildcards ? and * allowed for file names
-FILENAME_WILDCARDS           =  142 ; requires FILE_IDENTIFICATION = NAME, not specified implies wildcards not allowed
+FILENAME_WILDCARDS           =  143 ; requires FILE_IDENTIFICATION = NAME, not specified implies wildcards not allowed
  WILDCARDS_ALLOWED          = 0
 
 
 ; chained files, not specified implies no chained file operation
-CHAINED_FILES                =  143
+CHAINED_FILES                =  144
  CHAINED_FILES_POSSIBLE     = 0
 
-DESTINATION_OVERRIDE         =  144 ; load/save/decompress to specified memory address, determined by c-flag on call
+DESTINATION_OVERRIDE         =  145 ; load/save/decompress to specified memory address, determined by c-flag on call
                                     ; address is put to DESTINATION_LO and DESTINATION_HI before calling
                                     ; not specified implies no destination override
                                     ; XXX TODO mod routines to comply
  DEST_OVERRIDE              = 0
 
 ; works with file/data at $d000..$dfff
-UNDER_IO_RAM                 =  145 ; not specified implies not to $d000..$dfff
+UNDER_IO_RAM                 =  146 ; not specified implies not to $d000..$dfff
  D000_DFFF_POSSIBLE         = 0     ; $01 must be set accordingly
  D000_DFFF_SETS_RAM_CONFIG  = 1     ; $01 is set accordingly by the routine
 
-RETURNS_ENDADDR              =  146 ; returns end address in ENDADDRLO/ENDADDRHI after calling
+RETURNS_ENDADDR              =  147 ; returns end address in ENDADDRLO/ENDADDRHI after calling
                                     ; when loading without decompression, returns raw/unpacked data end address
                                     ; when loading with decompression, returns decompressed data end address
  ENDADDR_RETURNED           = 0
 
-REENTRANCE                   =  147 ; not specified implies not re-entrant and no guard
+REENTRANCE                   =  148 ; not specified implies not re-entrant and no guard
  NOT_REENTRANT_GUARDED      = 0     ; not re-entrant, but has guards
  IS_REENTRANT               = 1
 
-SELECTIVE_UNINSTALL          =  148 ; if c is set when calling, the drive-side routines are only uninstalled on the current drive
+SELECTIVE_UNINSTALL          =  149 ; if c is set when calling, the drive-side routines are only uninstalled on the current drive
  UNINSTALL_SELECTIVE        = 0
 
 ; XXX TODO kernal fallback
@@ -404,9 +408,9 @@ SELECTIVE_UNINSTALL          =  148 ; if c is set when calling, the drive-side r
     FILE_NOT_FOUND           = .lobyte(-$05)
     DEVICE_NOT_PRESENT       = .lobyte(-$04)
     DEVICE_INCOMPATIBLE      = .lobyte(-$03) ; if LOAD_VIA_KERNAL_FALLBACK != 0, don't regard this as an error
-    TOO_MANY_DEVICES         = .lobyte(-$02) ; for ONE_DRIVE_ON_BUS, if LOAD_VIA_KERNAL_FALLBACK != 0, don't regard this as an error
+    TOO_MANY_DEVICES         = .lobyte(-$02) ; when not MANY_DRIVES_ON_SERIAL_BUS, if LOAD_VIA_KERNAL_FALLBACK != 0, don't regard this as an error
     GENERIC_KERNAL_ERROR     = .lobyte(-$01) ; an error occured while loading without installed drive code via KERNAL fallback,
-                                    ; check the x register for further information
+                                             ; check the x register for further information
 .endscope; status
 
 LOADSTATUSOFFS               =    0 ; for non-blocking operation

@@ -1,4 +1,7 @@
 
+D71 = d71
+#D71 = d64 # use this if ONLY_1541_AND_COMPATIBLE != 0
+
 ifeq ($(PLATFORM),)
 _PLATFORM_     = c64
 else ifeq ($(PLATFORM),c116)
@@ -9,8 +12,8 @@ else
 _PLATFORM_     = $(PLATFORM)
 endif
 
-ifeq ($(NO_VICE),)
-NO_VICE        = 0
+ifeq ($(USE_VICE),)
+USE_VICE       = 0
 endif
 
 
@@ -36,7 +39,7 @@ endif
 
 
 ifeq ($(_PLATFORM_),c16)
-    ifneq ($(NO_VICE),0)
+    ifeq ($(USE_VICE),0)
         ifneq ($(findstring WIN,$(ARCH)),)
 USE_PLUS4EMU   = 0
 USE_YAPE       = 1
@@ -125,8 +128,9 @@ EMU94000       = $(VICE) -drive8type 4000 -drive9type 1541 -autostart
 EMU91001       = $(VICE) -drive8type 1001 -drive9type 1541 -autostart
 
 
+NOWORKINGCOPY  = $(shell svn info > /dev/null 2>&1; echo $$?)
 SVNVERSION     = svnversion
-ifneq ($(wildcard ../../../.svn/format),)
+ifeq ($(NOWORKINGCOPY),0)
 VERSION        = $(shell $(SVNVERSION) | tr -d [:cntrl:])
 else
 VERSION        =
@@ -137,6 +141,7 @@ PRINTF         = printf
 HEAD           = head
 
 MAKE           = make
+GCC            = gcc
 CP             = cp
 MV             = mv
 RM             = rm -f
@@ -155,37 +160,22 @@ C1541          = c1541
 
 CC1541         = ../../tools/cc1541
 
-EXO            = exomizer
-PU             = pucrunch
-BB             = BB
-DOYNAX_LZ      = lz # aka Doynamite
+EXO            = ../../tools/exomizer207/src/exomizer
+EXO_SOURCE     = ../../tools/exomizer207/src
 
-# CRUSH.EXE is a DOS program to which no source has been published
-ifneq ($(findstring WIN,$(ARCH)),)
-    ifeq (WIN64,$(ARCH))
-            # WIN64, no native DOS support
-DOSBOX         = DOSBox
-LC             = ..\..\tools\crush $(LCSPEED)
-    else
-            # WIN32, CRUSH.EXE does not understand "/" instead of "\"
-LC             = ../../tools/crush $(LCSPEED)
-    endif
-else ifeq ($(ARCH),MACOSX)
-    # MacOSX, DOSBox must be installed as an application
-DOSBOX         = /Applications/DOSBox.app/Contents/MacOS/DOSBox
-LC             = ..\..\tools\crush $(LCSPEED)
-else
-    # default: use wine to run CRUSH.EXE
-LC             = wine ../../tools/crush $(LCSPEED) # XXX TODO try dosemu
-endif
+PU             = ../../tools/pucrunch/pucrunch
+PU_SOURCE      = ../../tools/pucrunch
+
+DOYNAX_LZ      = ../../tools/doynamite_1.0/lz
+
+BB             = ../../tools/bb/bb
+BB_SOURCE      = ../../tools/bb
+
+LC             = ../../tools/wcrush/wcrush/wcrush
 LCSPEED        = 6
+LC_SOURCE      = ../../tools/wcrush
 
-JAVAC          = javac
-JAVA           = java
-CONVPATH       = ../../tools
-CONVNAME       = CompressedFileConverter
-CONV           = $(JAVA) -cp $(CONVPATH) $(CONVNAME)
-
+CONV           = ../../tools/compressedfileconverter.pl
 
 LOADER         = ../../src
 LDRBIN         = ../../build
@@ -227,40 +217,40 @@ SHAREDDEPS     = $(LOADER)/Makefile \
 
 LOADERDEPS     = $(SHAREDDEPS) $(BUILDDIR) $(INTERMDIR) \
                  $(LOADER)/decompress/exodecomp.s $(LOADER)/decompress/pudecomp.s $(LOADER)/decompress/doynaxdecomp.s $(LOADER)/decompress/lcdecomp.s $(LOADER)/decompress/bbdecomp.s \
-                 $(LOADER)/drives/drivecode1541-kernel.inc $(LOADER)/drives/drivecode1541.s $(LOADER)/drives/drivecode1541-loadfile.s $(LOADER)/drives/drivecode1571.s $(LOADER)/drives/drivecode1581.s \
+		 $(LOADER)/drives/drivecode-common.inc $(LOADER)/drives/drivecode1541-kernel.inc $(LOADER)/drives/drivecode1541.s $(LOADER)/drives/drivecode1541-loadfile.s $(LOADER)/drives/drivecode1571.s $(LOADER)/drives/drivecode1581.s \
                  $(LOADER)/hal/hal.inc $(LOADER)/hal/hal-c64.inc $(LOADER)/hal/hal-c16.inc \
                  $(LOADER)/install/install.s \
                  $(LOADER)/resident/resident.s $(LOADER)/resident/decompress.s $(LOADER)/resident/zp-resident.s \
                  $(LDRINC)/resident-jumptable.inc $(LDRINC)/install-jumptable.inc $(LDRINC)/loader.inc $(LDRINC)/diskio.inc
 
 MODULE1541DEPS = $(SHAREDDEPS) \
-                 $(LOADER)/drives/drivecode1541-kernel.inc $(LOADER)/drives/drivecode1541.s $(LOADER)/drives/drivecode1541-loadfile.s \
+                 $(LOADER)/drives/drivecode-common.inc $(LOADER)/drives/drivecode1541-kernel.inc $(LOADER)/drives/drivecode1541.s $(LOADER)/drives/drivecode1541-loadfile.s \
                  $(INTERMDIR)/kernelsymbols1541.inc
 
 DISKIMAGEDEPS  = Makefile $(CC1541) \
                  $(INTERMDIR)/test-$(_PLATFORM_).prg $(LDRBIN)/loader-$(_PLATFORM_).so \
                  $(INTERMDIR)/sheba.prg   $(INTERMDIR)/prlogo.prg \
-				 $(INTERMDIR)/shebahi.prg $(INTERMDIR)/prlogohi.prg \
-				 $(INTERMDIR)/sheba.exo   $(INTERMDIR)/prlogo.exo \
-				 $(INTERMDIR)/shebahi.exo $(INTERMDIR)/prlogohi.exo \
-				 $(INTERMDIR)/bothgfx.exo $(INTERMDIR)/bothgfxhi.exo \
-				 $(INTERMDIR)/sheba.pu    $(INTERMDIR)/prlogo.pu \
-				 $(INTERMDIR)/shebahi.pu  $(INTERMDIR)/prlogohi.pu \
-				 $(INTERMDIR)/bothgfx.pu  $(INTERMDIR)/bothgfxhi.pu \
-				 $(INTERMDIR)/sheba.dnx   $(INTERMDIR)/prlogo.dnx \
-				 $(INTERMDIR)/bothgfx.dnx $(INTERMDIR)/bothgfxhi.dnx \
-				 $(INTERMDIR)/shebahi.dnx $(INTERMDIR)/prlogohi.dnx \
-				 $(INTERMDIR)/sheba.bb    $(INTERMDIR)/prlogo.bb \
-				 $(INTERMDIR)/shebahi.bb  $(INTERMDIR)/prlogohi.bb \
-				 $(INTERMDIR)/bothgfx.bb  $(INTERMDIR)/bothgfxhi.bb \
-				 $(INTERMDIR)/sheba.lc    $(INTERMDIR)/prlogo.lc \
-				 $(INTERMDIR)/shebahi.lc  $(INTERMDIR)/prlogohi.lc \
+                 $(INTERMDIR)/shebahi.prg $(INTERMDIR)/prlogohi.prg \
+                 $(INTERMDIR)/sheba.exo   $(INTERMDIR)/prlogo.exo \
+                 $(INTERMDIR)/shebahi.exo $(INTERMDIR)/prlogohi.exo \
+                 $(INTERMDIR)/bothgfx.exo $(INTERMDIR)/bothgfxhi.exo \
+                 $(INTERMDIR)/sheba.pu    $(INTERMDIR)/prlogo.pu \
+                 $(INTERMDIR)/shebahi.pu  $(INTERMDIR)/prlogohi.pu \
+                 $(INTERMDIR)/bothgfx.pu  $(INTERMDIR)/bothgfxhi.pu \
+                 $(INTERMDIR)/sheba.dnx   $(INTERMDIR)/prlogo.dnx \
+                 $(INTERMDIR)/bothgfx.dnx $(INTERMDIR)/bothgfxhi.dnx \
+                 $(INTERMDIR)/shebahi.dnx $(INTERMDIR)/prlogohi.dnx \
+                 $(INTERMDIR)/sheba.bb    $(INTERMDIR)/prlogo.bb \
+                 $(INTERMDIR)/shebahi.bb  $(INTERMDIR)/prlogohi.bb \
+                 $(INTERMDIR)/bothgfx.bb  $(INTERMDIR)/bothgfxhi.bb \
+                 $(INTERMDIR)/sheba.lc    $(INTERMDIR)/prlogo.lc \
+                 $(INTERMDIR)/shebahi.lc  $(INTERMDIR)/prlogohi.lc \
                  $(INTERMDIR)/bothgfx.lc  $(INTERMDIR)/bothgfxhi.lc
 
 
 all: $(BUILDDIR)/loadertest-$(_PLATFORM_).d64 \
      $(BUILDDIR)/loadertest-$(_PLATFORM_).d71 \
-	 $(BUILDDIR)/loadertest-$(_PLATFORM_).d81
+     $(BUILDDIR)/loadertest-$(_PLATFORM_).d81
 
 
 $(LDRBIN)/loader-$(_PLATFORM_).a: $(LOADERDEPS) $(LOADER)/install/dynlink.s $(LOADER)/decompress/exostreamdecr1.s $(LDRBIN)/loader-$(_PLATFORM_).so
@@ -292,8 +282,8 @@ $(INTERMDIR)/test-$(_PLATFORM_).o: test.s zp.inc $(LOADERDEPS) $(LOADER)/install
 $(INTERMDIR)/test-$(_PLATFORM_)-uncompressed.prg: Linkfile $(INTERMDIR)/test-$(_PLATFORM_).o $(LDRBIN)/loader-$(_PLATFORM_).a
 	$(LD) -o $@ $(INTERMDIR)/test-$(_PLATFORM_).o -C Linkfile -vm -m $@.map -Ln $@.lbl $(LDRBIN)/loader-$(_PLATFORM_).a
 
-$(INTERMDIR)/test-$(_PLATFORM_).prg: $(INTERMDIR)/test-$(_PLATFORM_)-uncompressed.prg
-	$(PU) $(PU_FLAGS) $? $@
+$(INTERMDIR)/test-$(_PLATFORM_).prg: $(INTERMDIR)/test-$(_PLATFORM_)-uncompressed.prg $(PU)
+	$(PU) $(PU_FLAGS) $< $@
 
 
 $(INTERMDIR)/shebahi.prg: $(RESOURCESDIR)/sheba.bin
@@ -305,35 +295,25 @@ $(INTERMDIR)/prlogohi.prg: $(RESOURCESDIR)/prlogo.bin
 $(INTERMDIR)/%.prg: $(RESOURCESDIR)/%.bin
 	$(PRINTF) "\x00\x40" | $(CAT) - $? > $@
 
-$(CONVPATH)/$(CONVNAME).class: $(CONVPATH)/$(CONVNAME).java
-	$(JAVAC) $^
 
-$(INTERMDIR)/%.exo: $(INTERMDIR)/%.prg
-	$(EXO) mem -f $? -o $@
+$(INTERMDIR)/%.exo: $(INTERMDIR)/%.prg $(EXO)
+	$(EXO) mem -f $< -o $@
 
-$(INTERMDIR)/%.pu: $(INTERMDIR)/%.prg
-	$(PU) -c0 -x 0 $? $@
+$(INTERMDIR)/%.pu: $(INTERMDIR)/%.prg $(PU)
+	$(PU) -c0 -x 0 $< $@
 
-$(INTERMDIR)/%.dnx: $(CONVPATH)/$(CONVNAME).class $(INTERMDIR)/%.prg
-	$(DOYNAX_LZ) -o $@ $(filter-out $<, $^)
-	$(CONV) dnx $(filter-out $<, $^) $@ $@
+$(INTERMDIR)/%.dnx: $(INTERMDIR)/%.prg $(DOYNAX_LZ)
+	$(DOYNAX_LZ) -o $@ $<
+	$(CONV) dnx $< $@ $@
 
-$(INTERMDIR)/%.bb: $(CONVPATH)/$(CONVNAME).class $(INTERMDIR)/%.prg
-	$(BB) $(filter-out $<, $^)
-	$(MV) $(filter-out $<, $^).bb $@
-	$(CONV) bb $(filter-out $<, $^) $@ $@
+$(INTERMDIR)/%.bb: $(INTERMDIR)/%.prg $(BB)
+	$(BB) $<
+	$(MV) $<.bb $@
+	$(CONV) bb $< $@ $@
 
-ifeq ($(DOSBOX),)
-$(INTERMDIR)/%.lc: $(CONVPATH)/$(CONVNAME).class $(INTERMDIR)/%.prg
-	$(LC) $(filter-out $<, $^) out
-	$(MV) out $@
-	$(CONV) lc $(filter-out $<, $^) $@ $@
-else
-$(INTERMDIR)/%.lc: $(CONVPATH)/$(CONVNAME).class $(INTERMDIR)/%.prg
-	export SDL_VIDEODRIVER=dummy && $(DOSBOX) -noconsole -c "MOUNT C ../.." -c "C:" -c "cd build\interm" -c "..\$(LC) $(notdir $(filter-out $<, $^)) out" -c "exit"
-	$(MV) $(INTERMDIR)/OUT $@
-	$(CONV) lc $(filter-out $<, $^) $@ $@
-endif
+$(INTERMDIR)/%.lc: $(INTERMDIR)/%.prg $(LC)
+	$(LC) $(LCSPEED) $< $@
+	$(CONV) lc $< $@ $@
 
 $(INTERMDIR)/bothgfx.%: $(INTERMDIR)/sheba.% $(INTERMDIR)/prlogo.%
 	$(CAT) $^ > $@
@@ -551,7 +531,7 @@ $(BUILDDIR)/loadertest-$(_PLATFORM_).d71: $(DISKIMAGEDEPS)
 # QD-PRLOGOHI.DNX   $2e/$05
 # CD-BOTHGFXHI.DNX  $2e/$0b
 
-$(BUILDDIR)/loadertest-$(_PLATFORM_).d81 $(BUILDDIR)/loadertest-$(_PLATFORM_).d82: $(DISKIMAGEDEPS)
+$(BUILDDIR)/loadertest-$(_PLATFORM_).d81 $(BUILDDIR)/loadertest-$(_PLATFORM_).d82: $(DISKIMAGEDEPS) filler.prg
 	$(C1541) -format "normal is boring,+h" $(subst .,,$(suffix $@)) $@
 	$(C1541) -attach $@ \
 	 -write $(INTERMDIR)/sheba.prg              "sb-sheba.bin" \
@@ -615,13 +595,13 @@ run41ii run42: $(BUILDDIR)/loadertest-$(_PLATFORM_).d64
 run70: $(BUILDDIR)/loadertest-$(_PLATFORM_).d64
 	$(EMU70) $^
 
-run71: $(BUILDDIR)/loadertest-$(_PLATFORM_).d71
+run71: $(BUILDDIR)/loadertest-$(_PLATFORM_).$(D71)
 	$(EMU71) $^
 
 run7141: $(BUILDDIR)/loadertest-$(_PLATFORM_).d64
 	$(EMU7141) $^
 
-run73: $(BUILDDIR)/loadertest-$(_PLATFORM_).d71
+run73: $(BUILDDIR)/loadertest-$(_PLATFORM_).$(D71)
 	$(EMU73) $^
 
 run7341: $(BUILDDIR)/loadertest-$(_PLATFORM_).d64
@@ -661,13 +641,13 @@ run941ii run942: $(BUILDDIR)/loadertest-$(_PLATFORM_).d64
 run970: $(BUILDDIR)/loadertest-$(_PLATFORM_).d64
 	$(EMU970) $^
 
-run971: $(BUILDDIR)/loadertest-$(_PLATFORM_).d71
+run971: $(BUILDDIR)/loadertest-$(_PLATFORM_).$(D71)
 	$(EMU971) $^
 
 run97141: $(BUILDDIR)/loadertest-$(_PLATFORM_).d64
 	$(EMU97141) $^
 
-run973: $(BUILDDIR)/loadertest-$(_PLATFORM_).d71
+run973: $(BUILDDIR)/loadertest-$(_PLATFORM_).$(D71)
 	$(EMU973) $^
 
 run97341: $(BUILDDIR)/loadertest-$(_PLATFORM_).d64
@@ -699,11 +679,31 @@ clean:
 	-$(RMDIR) $(INTERMDIR)
 
 distclean:
+	-$(RM) $(PU)
+	-$(RM) $(DOYNAX_LZ)
+	-$(RM) $(BB)
 	$(MAKE) -C $(LOADER) clean
 	$(MAKE) -C $(CC1541)_source clean
+	$(MAKE) -C $(EXO_SOURCE) clean
+	$(MAKE) -C $(LC_SOURCE) clean
 
 wipe: distclean clean
 
 
 $(CC1541): $(CC1541)_source/cc1541.cpp
 	$(MAKE) -C $(CC1541)_source
+
+$(EXO):
+	$(MAKE) -C $(EXO_SOURCE)
+
+$(PU):
+	$(MAKE) -C $(PU_SOURCE)
+
+$(DOYNAX_LZ):
+	$(GCC) $@.c -o $@
+
+$(BB):
+	$(MAKE) -C $(BB_SOURCE)
+
+$(LC):
+	$(MAKE) -C $(LC_SOURCE)

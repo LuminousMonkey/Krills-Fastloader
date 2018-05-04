@@ -45,7 +45,7 @@ zero_bits  = COLOUR_MEDIUMGREY
 
 loop:       LOADRAW #<filename1, #>filename1
             bcs error
-            LOADRAW #<filename2, #>filename2
+            LOADNEXTRAW
             bcc loop
             
 error:      ldx #COLOUR_BLACK
@@ -54,4 +54,3 @@ error:      ldx #COLOUR_BLACK
             jmp :-
 
 filename1:  .asciiz "pic1"
-filename2:  .asciiz "pic2"

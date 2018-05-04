@@ -2,9 +2,17 @@
 .include "cpu.inc"
 .include "via.inc"
 
-.ifdef STANDALONE
+.ifndef BUILD_KERNEL
+    KERNEL_ONLY = INSTALL_FROM_DISK
+.else; BUILD_KERNEL
     __NO_LOADER_SYMBOLS_IMPORT = 1
     .include "loader.inc"
+
+    .ifdef LOADFILE
+        KERNEL_ONLY = 0
+    .else
+        KERNEL_ONLY = 1
+    .endif
 
     .export LOWMEMEND  : absolute
     .export RUNMODULE  : absolute
@@ -15,6 +23,7 @@
     .export driveidle  : absolute
     .export cmpidswtch : absolute
     .export gcrencode  : absolute
+    .export prepareblk : absolute
     .export getblkchid : absolute
     .export getblkstid : absolute
     .export getblcurtr : absolute
@@ -22,13 +31,20 @@
     .export trackseek  : absolute
     .export getnumscts : absolute
     .export duninstall : absolute
-.endif; !STANDALONE
+.endif; BUILD_KERNEL
 
 .include "drives/drivecode1541-kernel.inc"
+.include "drives/drivecode-common.inc"
 
+.if KERNEL_ONLY
+    ; resolve circular imports of kernel and loadfile module
+    .scope imports
+        .include "symbols1541-kernel-loadfile.inc"
+    .endscope  
+.endif
 
 .if UNINSTALL_RUNS_DINSTALL
-    .ifndef STANDALONE
+    .ifndef BUILD_KERNEL
         .export drvcodebeg41 : absolute
     .endif
     .export drvprgend41 : absolute
@@ -44,7 +60,7 @@
 
 .macro GETBYTE_IMPL
             lda #%10000000; CLK OUT lo: drive is ready
-            sta VIA2_T1C_H; reset watchdog time-out
+            sta WATCHDOG_TIMER; reset watchdog time-out
             GETBYTE_IMPL_COMMON
 .endmacro
 
@@ -67,47 +83,37 @@
 
 
 .if !UNINSTALL_RUNS_DINSTALL
-            .org $0020
+            .org $001c
 .else
-            .org $001a
+            .org $001b
 .endif
 
-.ifdef STANDALONE
+.ifdef BUILD_KERNEL
             .word * + 2
-.endif; STANDALONE
+.endif; BUILD_KERNEL
 
             .assert * > ROMOS_HEADER_SECTOR, error, "***** 1541 drivecode starts too low in memory. *****"
 drvcodebeg41:
 
-.ifndef STANDALONE
+.ifndef BUILD_KERNEL
             .byte .hibyte(drvcodeend41 - * + $0100 - $01); init transfer count hi-byte
             .byte .hibyte(drvprgend41 - * + $0100 - $01); init transfer count hi-byte for re-install
-.endif; !STANDALONE
+.endif; !BUILD_KERNEL
 
 dcodinit:
 
 .if !UNINSTALL_RUNS_DINSTALL
-            lda #T1_FREE_RUNNING | PA_LATCHING_ENABLE; watchdog IRQ: count phi2 pulses, 16-bit free-running,
-                                                     ; enable port a latching to grab one gcr byte at a time
-                                                     ; rather than letting the gcr bitstream scroll through
-                                                     ; port a (applies to 1541 and Oceanic OC-118, but not
-                                                     ; 1541-II)
-            sta VIA2_ACR
-            lda #READ_MODE | BYTE_SYNC_ENABLE
-            sta VIA2_PCR
-
             ; before loading the first file, the current track number is
             ; retrieved by reading any block header on the disk -
             ; however, if the loader is uninstalled before loading anything,
             ; it needs to know the more or less correct current track number
             ; in order to seek to track 18 before reset
-            lda ROMOS_HEADER_TRACK; $18
             sta CURTRACK; $13
 
             ; watchdog initialization
 
             lda #$00
-    .if INSTALL_FROM_DISK
+    .if KERNEL_ONLY
             ldx #JOBCODE0400 - JOBCODE0400 + $80
     .else
             ldx #JOBCODE0600 - JOBCODE0400 + $80
@@ -122,7 +128,6 @@ dcodinit:
 
             lda #IRQ_SET_FLAGS | IRQ_TIMER_1
             sta VIA2_IER; timer 1 IRQs from VIA 2
-.endif; !UNINSTALL_RUNS_DINSTALL
 
             lda #JOBCODE_EXECUTE
             sta JOBCODE0300; execute watchdog handler at $0300 on watchdog time-out
@@ -136,6 +141,7 @@ dcodinit:
 
             lda #CLK_OUT; drivebusy, signal idle to the computer
             sta VIA1_PRB
+.endif; !UNINSTALL_RUNS_DINSTALL
 
             lda #CLK_OUT | CLK_IN | DATA_IN | ATN_IN
 :           cmp VIA1_PRB
@@ -233,6 +239,8 @@ KERNEL:
 .if UNINSTALL_RUNS_DINSTALL
 GETDRIVECODE = getdrvcode - drivebusy + $0800
 
+            .byte $00; padding
+
 runcodeget: ldx #.lobyte(stack + $01)
             txs
 :           lda .lobyte(drivebusy - $0100),x
@@ -254,6 +262,7 @@ getroutputhi = * + $08
             dec drvcodebeg41 + $01
             bne getdrvcode
             jmp restart
+	    
 .endif; UNINSTALL_RUNS_DINSTALL
 
             ; common code for all configurations
@@ -267,8 +276,8 @@ drivebusy:  sty VIA1_PRB
             rts
 
 waitsync:   ldx #$fe
-            stx VIA2_T1C_H; reset the sync time-out
-:           lda VIA2_T1C_H
+            stx WAITSYNC_TIMER; reset the sync time-out
+:           lda WAITSYNC_TIMER
             beq wsynctmout
             bit VIA2_PRB
             bmi :-
@@ -290,8 +299,8 @@ checkchg:   lax VIA2_PRB; check light sensor for disk removal
             sta DISKCHANGED; set the new disk flag when disks have been changed
 :           rts
 
-			; the routine above must not be called from the watchdog
-			; IRQ handler, as it may be overwritten on watchdog IRQ
+            ; the routine above must not be called from the watchdog
+            ; IRQ handler, as it may be overwritten on watchdog IRQ
 
             ; * >= $0100
 stack:
@@ -300,7 +309,6 @@ stack:
 .if LOAD_ONCE
             .byte $00, $00, $00; padding, best used for bigger stack
 .endif
-			.word $00; padding, best used for bigger stack
             .word $00, $00, dcodinit - $01, runmodule - $01; return addresses for install
 stackend:   ; stacktop + 1
             .assert stackend < $0200, error, "***** 1541 stack too high in memory. *****"
@@ -309,7 +317,7 @@ decodehdr:  lda GCRBUFFER + $06
             alr #(GCR_NIBBLE_MASK << 1) | 1; and + lsr
             tay
             lda GCRBUFFER + $05
-            jsr decodesub - $01; checksum
+            jsr decodesub - $01; cdhecksum
             sta GCRBUFFER + $06
             lax GCRBUFFER + $02
             lsr
@@ -347,7 +355,25 @@ gcrdecode:  ldx HINIBBLES,y
             iny
             rts
 
-; loadfile code
+prepareblk: ; loadfile code
+           ;ldx LOADEDSECTOR
+            ldy #SECTORISPROCESSED; $ff
+            sty TRACKLINKTAB,x; mark the loaded block as processed
+           ;ldy #$ff
+           ;lda LINKTRACK
+            tax
+            bne :+
+            ldy LINKSECTOR; the file's last block's length
+.if KERNEL_ONLY
+:           sty imports::blocksize + $01
+.else
+:           sty blocksize + $01
+.endif
+            dey
+            dey
+            tya
+            ldy #$01; block size offset, 0 is block index
+
 gcrencode:  pha
             and #BINARY_NIBBLE_MASK
             tax
@@ -361,19 +387,23 @@ gcrencode:  pha
             tax
             lda GCRENCODE,x
             sta HINIBBLES,y
+	    ; fall through
+	    
+fadedone:   clc
             rts
 
 busyledon:  lda #BUSY_LED
             ora VIA2_PRB
-            bne store_via2
+            bne store_via2; jmp
 
 fadeled:    tya
             tax
-            beq :++++
+            beq fadedone
 :           inx
             bne :-
             tax
             jsr busyledon
+	   ;lda VIA2_PRB
 :           dex
             bne :-
             dey
@@ -382,7 +412,7 @@ fadeled:    tya
 :           and #.lobyte(~BUSY_LED); turn off busy led
 store_via2: sta VIA2_PRB
 errorretlo: sec
-:           rts
+            rts
 
             ; getblock calls
             ; in: a: track
@@ -642,7 +672,7 @@ errorrethi: sec             ; operation not successful
             .assert * <= $0300, error, "***** 1541 watchdog IRQ/BRK handler located above $0300. *****"
 	.endif
 
-watchdgirq: ldy #$ff
+watchdgirq: ldy #$ff; uncertain if led on, off or fading: fade off led regardless
 
 duninstall: tya
             beq :+
@@ -654,13 +684,10 @@ duninstall: tya
             pla
             tay
 uninstfade: jsr fadeled
-            tya
-            bne uninstfade
+            bcs uninstfade
             jmp (RESET_VECTOR)
 
 .else ; UNINSTALL_RUNS_DINSTALL
-
-            .byte $00; padding
 
     .if !DISABLE_WATCHDOG
             .assert * >= $0300, error, "***** 1541 watchdog IRQ/BRK handler located below $0300. *****"
@@ -673,14 +700,12 @@ watchdgirq: jsr busyledon
             ; fade off the busy led and reset the drive
             ldy #$ff
 :           jsr fadeled
-            tya
-            bne :-
+            bcs :-
             jmp (RESET_VECTOR)
-            
+
 duninstall:
-:           jsr fadeled
-            tya
-            bne :-
+uninstfade: jsr fadeled
+            bcs uninstfade
             jmp runcodeget
 
 .endif; UNINSTALL_RUNS_DINSTALL
@@ -719,7 +744,7 @@ trackseekx: lda #MOTOR; turn on the motor
             ;                  %11 %10 %01 -> %10
 
             lda #$80 | (MINSTPSP + 1)
-trackstep:  sta VIA2_T1C_H
+trackstep:  sta TRACKSTEP_TIMER
             tax
             lda TRACKINC
             eor VIA2_PRB
@@ -738,7 +763,7 @@ headaccl:   cmp #$80 | MAXSTPSP
             sta CURRSTEPSPEEDLOW
             pla
             sbc #$00
-noheadacc:  cpx VIA2_T1C_H
+noheadacc:  cpx TRACKSTEP_TIMER
             beq noheadacc; wait until the counter hi-byte has decreased by 1
             dex
             bmi headaccl
@@ -797,8 +822,8 @@ driveidle:  jsr fadeled; fade off the busy led
 runmodule:
 .if !LOAD_ONCE
             sec
-            ror VIA2_T1C_H; reset watchdog time-out, this also clears the possibly
-                          ; pending timer 1 IRQ flag
+            ror WATCHDOG_TIMER; reset watchdog time-out, this also clears
+                              ; the possibly pending timer IRQ flag
             ENABLE_WATCHDOG; enable watchdog, the computer might be reset while sending over a
                            ; byte, leaving the drive waiting for handshake pulses
 .endif; !LOAD_ONCE
@@ -833,8 +858,8 @@ runmodule:
             ; module space
 RUNMODULE:
 
-.ifndef STANDALONE
-    .if INSTALL_FROM_DISK
+.ifndef BUILD_KERNEL
+    .if KERNEL_ONLY
             ldy #CLK_OUT
             jsr drivebusy; disables watchdog
 
@@ -886,10 +911,14 @@ loadmodend:
 
             .assert loadmodend - loadmodule + LOWMEM + $03 < LOWMEMEND, error, "***** loadmodule too large. *****"
 
-    .else; !INSTALL_FROM_DISK
+    .else; !KERNEL_ONLY
             .include "drives/drivecode1541-loadfile.s"
-    .endif; !INSTALL_FROM_DISK
-.endif
+    .endif; !KERNEL_ONLY
+.else; BUILD_KERNEL
+    .ifdef LOADFILE
+            .include "drives/drivecode1541-loadfile.s"
+    .endif
+.endif; BUILD_KERNEL
 
 DRVCODE41END = *
 .export DRVCODE41END
@@ -917,7 +946,7 @@ dinstall:
             and VIA2_PRB        ; file open operation immediately
             sta VIA2_PRB        ; before running this code
 .endif
-.if INSTALL_FROM_DISK
+.if KERNEL_ONLY
             lda ROMOS_HEADER_TRACK
             sta LIBTRACK
             lda ROMOS_HEADER_SECTOR
@@ -935,7 +964,7 @@ dinstall:
             lsr
 instalwait: bcc :-
 
-.ifndef STANDALONE
+.ifndef BUILD_KERNEL
 
             ldx #.lobyte(drvcodebeg41 - $01)
 dgetrout:   inx
@@ -949,12 +978,10 @@ dgetputhi = * + $02
             dec drvcodebeg41
             bne dgetrout
 
-.endif; !STANDALONE
+.endif; !BUILD_KERNEL
 
 restart:    ldx #.lobyte(stackend - $05)
             txs
-
-.if UNINSTALL_RUNS_DINSTALL
 
             lda #T1_FREE_RUNNING | PA_LATCHING_ENABLE; watchdog IRQ: count phi2 pulses, 16-bit free-running,
                                                      ; enable port a latching to grab one gcr byte at a time
@@ -971,12 +998,13 @@ restart:    ldx #.lobyte(stackend - $05)
             ; it needs to know the more or less correct current track number
             ; in order to seek to track 18 before reset
             lda ROMOS_HEADER_TRACK; $18
+.if UNINSTALL_RUNS_DINSTALL
             sta CURTRACK; $13
 
             ; watchdog initialization
 
             lda #$00
-    .if INSTALL_FROM_DISK
+    .if KERNEL_ONLY
             ldx #JOBCODE0400 - JOBCODE0400 + $80
     .else
             ldx #JOBCODE0600 - JOBCODE0400 + $80
@@ -991,6 +1019,19 @@ restart:    ldx #.lobyte(stackend - $05)
 
             lda #IRQ_SET_FLAGS | IRQ_TIMER_1
             sta VIA2_IER; timer 1 IRQs from VIA 2
+
+            lda #JOBCODE_EXECUTE
+            sta JOBCODE0300; execute watchdog handler at $0300 on watchdog time-out
+
+            lda #NUMMAXSECTORS
+            sta NUMSECTORS
+
+           ;ldx #$7f
+            stx LOADEDMODULE
+            stx DISKCHANGED
+
+            lda #CLK_OUT; drivebusy, signal idle to the computer
+            sta VIA1_PRB
 .endif; UNINSTALL_RUNS_DINSTALL
 
             rts; returns to dcodinit

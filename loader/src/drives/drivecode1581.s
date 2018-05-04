@@ -3,6 +3,9 @@
 .include "cia.inc"
 .include "via.inc"
 
+.include "drives/drivecode-common.inc"
+
+
 BUFFER                = $00
 SYS_SP                = $01
 JOBCODESTABLE         = $02; fixed in ROM
@@ -56,15 +59,15 @@ OK_DV                 = $00
 
 BUFFER0               = $0300
 BUFFERSIZE            = $0100
-TRACKOFFSET           = $00
-SECTOROFFSET          = $01
 
 BLOCKBUFFER           = $0900
+TRACKOFFSET           = $00
+SECTOROFFSET          = $01
 SENDTABLELO           = $0a00
 SENDTABLEHI           = $0b00
 
-LINKTRACK             = BLOCKBUFFER + $00
-LINKSECTOR            = BLOCKBUFFER + $01
+LINKTRACK             = BLOCKBUFFER + TRACKOFFSET
+LINKSECTOR            = BLOCKBUFFER + SECTOROFFSET
 
 BINARY_NIBBLE_MASK    = %00001111
 
@@ -83,11 +86,6 @@ CONTROLLERIRQPERIODFD = $4e20
 .else
     .macro INIT_CONTROLLER
     .endmacro
-.endif
-
-.if (::FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME) & (!LOAD_ONCE)
-NEW_DISK_VALUE        = $ff
-LOAD_FILE_VALUE       = $7f
 .endif
 
 BUFFERINDEX           = (BLOCKBUFFER - BUFFER0) / BUFFERSIZE
@@ -235,171 +233,13 @@ beginload:
                           ; byte, leaving the drive waiting for handshake pulses
     .endif; !DISABLE_WATCHDOG
 
-            ; get starting track and sector of the file to load
-
     .if ::FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
 
-            ldx #LOAD_FILE_VALUE
-            lda DIRCYCLEFLAG; if #files < dirbuffsize (DIRCYCLEFLAG = $00),
-            beq getfilenam  ; don't reset DIRCYCLEFLAG to $7f
-            stx DIRCYCLEFLAG
-getfilenam: jsr dgetbyte; get filename
-            beq :+
-            inx
-            sta filename - LOAD_FILE_VALUE - 1,x
-            cpx #.lobyte(FILENAME_MAXLENGTH - 2 - LOAD_FILE_VALUE)
-            bne getfilenam
-:           jsr drwaitrkch; disables watchdog
-            jsr gethashval
-            sta FILENAMEHASH1
-            stx FILENAMEHASH0
+            GET_FILENAME 1581
 
-            lda NUMFILES
-            beq newdisk
-            lda CIA_PRA; query DISK_CHANGE
-            bpl newdisk
-            jmp samedisk
-
-newdisk:    ; a new disk has been inserted
-            jsr getdirtrk
-            ldy #DIRSECTOR81
-            jsr getblock
-            bcs newdisk
-  
-           ;lda LINKTRACK
-            sta CYCLESTARTENDTRACK
-           ;ldy LINKSECTOR
-            sty CYCLESTARTENDSECTOR
-            sty FIRSTDIRSECTOR
-
-            ; filldirbuf -
-            ; directory cycling: fill the dir buffer,
-            ; this is also executed upon file not found in
-            ; the current directory segment buffered (with y
-            ; containing NEXTDIRBLOCKSECTOR's value)
-            ldx #NEW_DISK_VALUE
-            SKIPWORD
-filldirbuf: ldx #LOAD_FILE_VALUE
-            stx DIRCYCLEFLAG
-            ldx #$ff
-            stx WRAPFILEINDEX
-            inx
-            stx NUMFILES
-nextdirsct: bit CIA_PRA; query DISK_CHANGE
-            bpl newdisk
-
-            ; a contains the current dir track number
-            ; y contains the current dir sector number
-            sta CURRDIRBLOCKTRACK
-            jsr getblock
-            bcs newdisk
-
-           ;ldx CURRSECTOR
-            stx CURRDIRBLOCKSECTOR
-           ;ldy LINKSECTOR
-           ;lda LINKTRACK
-            bne :+
-            jsr getdirtrk
-            ldy FIRSTDIRSECTOR
-:           sta NEXTDIRBLOCKTRACK
-            sty NEXTDIRBLOCKSECTOR
-
-            ldy #$03
-dgdirloop:  ldx NUMFILES
-            lda BLOCKBUFFER + TRACKOFFSET,y; get file's start track
-            beq dnotafile; skip non-files denoted by track 0
-            sta DIRTRACKS,x
-            lda BLOCKBUFFER + SECTOROFFSET,y; get file's start sector
-            sta DIRSECTORS,x
-
-            jsr fnamehash
-            pha
-            txa
-            ldx NUMFILES; x is trashed in fnamehash
-            sta FILENAMEHASHVAL0,x
-            pla
-            sta FILENAMEHASHVAL1,x
-
-            inc NUMFILES
-            cpx #DIRBUFFSIZE - 1
-            bcs dirbuffull
-
-            ; little flaw for the sake of saving on code size:
-            ; when starting to cycle through the directory, the
-            ; files in the dir block the last file currently in the dir
-            ; buffer is in, will all be added to the buffer when it will
-            ; be filled on the subsequent file load - this is why the
-            ; minimum dir buffer size is 9 files
-dnotafile:  tya
-            and #%11100000
-           ;clc
-            adc #$23
-            tay
-            bcc dgdirloop; process all entries in a dir block
-
-            ldy NEXTDIRBLOCKSECTOR
-            jsr getdirtrk
-            cmp NEXTDIRBLOCKTRACK
-            bne :+
-            cpy #DIRSECTOR81
-            bne :+
-            stx WRAPFILEINDEX
-:           lda NEXTDIRBLOCKTRACK
-            cmp CYCLESTARTENDTRACK
-            bne nextdirsct
-            cpy CYCLESTARTENDSECTOR
-            bne nextdirsct
-
-            ; cycle complete
-            inc DIRCYCLEFLAG; $ff->$00 or $7f->$80
-            bcs samedisk; jmp
-
-dirbuffull: lda CURRDIRBLOCKTRACK
-            sta NEXTDIRBLOCKTRACK
-            lda CURRDIRBLOCKSECTOR
-            sta NEXTDIRBLOCKSECTOR
-
-            ; the disk was not changed, or the dir has just been read
-samedisk:   ldx NUMFILES
-nextfile:   dex
-            bpl findfile; check all dir entries in the buffer
-
-            ; the dir buffer does not contain the file,
-            ; so cycle through the directory to find it
-
-            lda DIRCYCLEFLAG; cycle until the
-            lsr             ; cycle is
-            bcc :+
-            lda NEXTDIRBLOCKTRACK
-            ldy NEXTDIRBLOCKSECTOR
-            jmp filldirbuf  ; complete
-:           sec
-            jmp filenotfnd
-
-findfile:   lda FILENAMEHASH0
-            eor FILENAMEHASHVAL0,x
-            bne nextfile
-            lda FILENAMEHASH1
-            eor FILENAMEHASHVAL1,x
-            bne nextfile
-
-            stx FILEINDEX; store index of file to jump to the track of the file
-                         ; following this one in the dir, after loading
-
-            ; store number of the dir block loaded last,
-            ; it is used to start the dir check cycle if
-            ; the next file is not found in the dir buffer;
-            ; it is also checked on the subsequent load to determine if the
-            ; dir check cycle is complete and the file be said to be not found
-            lda CURRDIRBLOCKTRACK
-            sta CYCLESTARTENDTRACK
-            sta NEXTDIRBLOCKTRACK
-            lda CURRDIRBLOCKSECTOR
-            sta CYCLESTARTENDSECTOR
-            sta NEXTDIRBLOCKSECTOR
-
-            lda DIRTRACKS,x
-            ldy DIRSECTORS,x
+            ; matches against hash of filename in FILENAMEHASH0/1
+            FIND_FILE 1581
+	        ; sets a to file track and y to file sector
             tax
 
     .elseif ::FILESYSTEM = FILESYSTEMS::TRACK_SECTOR
@@ -455,7 +295,7 @@ loadblock:  sta JOBTRKSCTTABLE + (2 * BUFFERINDEX) + TRACKOFFSET
             ldy #$ff
 :           lda LINKSECTOR
             pha
-            sty dsendcmp + $01
+            sty blocksize + $01
             dey
             dey
             sty BLOCKBUFFER + $01; block length
@@ -471,19 +311,11 @@ loadblock:  sta JOBTRKSCTTABLE + (2 * BUFFERINDEX) + TRACKOFFSET
 
 .if (::FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME) & (LOAD_ONCE = 0)
 
-            ldx FILEINDEX
-            inx
-            lda DIRTRACKS,x
-            cpx WRAPFILEINDEX
-            beq :+
-            cpx NUMFILES
-            bcc :++
-:           jsr getdirtrk
-:           jsr trackseek; move head to the start track of the next file in the directory
+            PREPARE_NEXT_FILE 1581
 
             clc; all ok after loading
 
-filenotfnd: ; branches here with carry set on file not found
+filenotfnd: ; branches here with carry set
 
 .else
             clc; all ok after loading
@@ -697,45 +529,13 @@ duninstall:
 
 .if (::FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME) & (!LOAD_ONCE)
 
-fnamehash:  ldx #.lobyte(-$01 - LOAD_FILE_VALUE - 1)
-:           lda BLOCKBUFFER + $02,y
-            iny
-            cmp #' ' | $80; $a0 = end of filename
-            beq gethashval
-            inx
-            sta filename - LOAD_FILE_VALUE - 1,x
-            cpx #.lobyte(FILENAME_MAXLENGTH - 2 - LOAD_FILE_VALUE)
-            bne :-
-
-gethashval: clc
-            stx HASHVALUE0LO
-            stx HASHVALUE1LO
-            stx HASHVALUE0HI
-            stx HASHVALUE1HI
-hashloop:   lda filename - LOAD_FILE_VALUE - 1,x
-            adc HASHVALUE0LO
-            sta HASHVALUE0LO
-            bcc :+
-            inc HASHVALUE0HI
-            clc
-:           adc HASHVALUE1LO
-            sta HASHVALUE1LO
-            lda HASHVALUE0HI
-            adc HASHVALUE1HI
-            sta HASHVALUE1HI
-            dex
-            bmi hashloop
-            adc HASHVALUE1LO
-            tax
-            lda HASHVALUE0LO
-            adc HASHVALUE0HI
-            rts
+            FNAMEHASH 1581
 
 .endif; (::FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME) & (!LOAD_ONCE)
 
             ; carry: clear = ok, set = load error
 sendstatus: lda #$00
-            sta dsendcmp + $01
+            sta blocksize + $01
             sbc #$01; carry clear: result is $00 - $02 = $fe - loading finished successfully
                     ; carry set:   result is $00 - $01 = $ff - load error
             sta JOBTRKSCTTABLE + (2 * BUFFERINDEX) + TRACKOFFSET; make sure DATA OUT (track change) is not
@@ -814,7 +614,7 @@ cmdfdfix4 = * + 1
             sta CIA_CRB                                              ; 2 + 4 - reset watchdog time-out
     .endif
             ldx #CLK_OUT                                             ; 2
-dsendcmp:   cpy #$00                                                 ; 2
+blocksize:  cpy #$00                                                 ; 2
             iny                                                      ; 2
             bit CIA_PRB                                              ; 4
             bpl resend                                               ; 2
@@ -854,7 +654,7 @@ cmdfdfix4 = * + 1
             sta CIA_PRB                                              ; 4
             asl                                                      ; 2
             and #.lobyte(~ATNA_OUT)                                  ; 2
-dsendcmp:   cpy #$00                                                 ; 2
+blocksize:  cpy #$00                                                 ; 2
             iny                                                      ; 2
                                                                      ; = 19
 

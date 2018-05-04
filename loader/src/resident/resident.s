@@ -667,7 +667,8 @@ sendname:   lda (BLOCKDESTLO),y
             ; it must get the last data bit in time
 
             ; clear DATA OUT and CLK OUT so they can be polled later
-            ; (CLK IN = 0: drive busy; when CLK IN = 1, DATA IN = 1: drive not present)
+            ; (when CLK IN = 0: drive busy, DATA IN = 0: track change,
+			;  when CLK IN = 1, DATA IN = 1: drive not present)
             CLEAR_DATA_OUT_CLEAR_CLK_OUT_CLEAR_ATN_OUT
 
     .if LOAD_VIA_KERNAL_FALLBACK
@@ -695,6 +696,13 @@ returnok:   lda #diskio::status::OK; $00
             ; it sets the busy flag which the computer polls after returning
 dorts:      rts
 
+
+            ; --- check if the specified file exists ---
+			; in: XXX
+
+            ; --- close an open file ---
+			; in:  nothing
+			; XXX
 
             ; --- poll for a block to download ---
             ; in:  nothing
@@ -801,9 +809,12 @@ strobdelay: clc
 .endif
 pollfail:   sec
             rts
-
-getblock:   lda #DEVICE_NOT_PRESENT
-            PREPARE_SEND_BLOCK_SIGNAL
+            
+stopoper:  ;sec; stop operation and return eof or error code, XXX
+           ;SKIPBYTE; this is used by the fileexists and closefile calls
+getblock:  ;clc
+            lda #DEVICE_NOT_PRESENT
+            PREPARE_SEND_BLOCK_SIGNAL; XXX modify as per c flag
             WAIT_FOR_BLOCK_READY
             bmi pollfail; branch if device not present
 
@@ -814,7 +825,7 @@ getblock:   lda #DEVICE_NOT_PRESENT
 
             jsr get1byte; get block index or error/eof code
 .if GETBYTE_SETS_VALUE_FLAGS = 0
-            tax
+            tax; z flag: set if first block
 .endif
 
             ; when enabling this, the PRINTHEX symbol must be marked as an import in the dynlink library -
@@ -939,7 +950,7 @@ storebyte:  sta a:$00,y      ; 5
             bne getblkloop   ; 3
                              ; = 10
 .ifndef DYNLINK_EXPORT
-            .assert .hibyte(* + 1) = .hibyte(getblkloop), warning, "***** Performance warning: Page boundary crossing (getblkloop). Please relocate the DISKIO segment a few bytes up or down. *****"
+            .assert .hibyte(* + 1) = .hibyte(getblkloop), warning, "***** Performance warning: Page boundary crossing (getblkloop). Please relocate the DISKIO (RESIDENT) segment a few bytes up or down. *****"
 .endif
 
 .if LOAD_UNDER_D000_DFFF & (PLATFORM <> diskio::platform::COMMODORE_16)
@@ -955,7 +966,7 @@ getblklpio: GETBYTE
             bne getblklpio
 
     .ifndef DYNLINK_EXPORT
-            .assert .hibyte(* + 1) = .hibyte(getblklpio), warning, "***** Performance warning: Page boundary crossing (getblklpio). Please relocate the DISKIO segment a few bytes up or down. *****"
+            .assert .hibyte(* + 1) = .hibyte(getblklpio), warning, "***** Performance warning: Page boundary crossing (getblklpio). Please relocate the DISKIO (RESIDENT) segment a few bytes up or down. *****"
     .endif
 
 gotblock:

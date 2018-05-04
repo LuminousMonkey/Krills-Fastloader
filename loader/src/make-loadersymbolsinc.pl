@@ -1,75 +1,149 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 
-sub maybe_print {
-    my $name = shift @_;
-    my $address = shift @_;
+=head1 NAME
 
-    if ($name !~ /fix|[A-Z]/) {
-        if ((($address >= $diskio_start) && ($address <= $diskio_end))
-         || (($address >= $diskio_install_start) && ($address <= $diskio_install_end))
-         || (($address >= $diskio_zp_start) && ($address <= $diskio_zp_end))) {
-            my @symbol = ($name, $address);
-            push(@symbols, \@symbol);
-        }
-    }
+make-loadersymbolsinc.pl
+
+=head1 DESCRIPTION
+
+This script extracts relevant symbols from a ld65-generated map file.
+The resulting include file can be included in third-party assembly source code.
+
+=head1 SYNOPSIS
+
+  make-loadersymbolsinc.pl loader-c64.map > loadersymbols-c64.inc
+
+=cut
+
+use strict;
+use warnings;
+
+use English qw( -no_match_vars ); # OS_ERROR etc.
+
+
+main();
+
+sub main
+{
+    my @input = read_file($ARGV[0]);
+    my ($diskio_segments, $symbols) = extract_all_symbols(@input);
+    print_symbols($diskio_segments, filter_symbols($diskio_segments, $symbols));
+
+    return;
 }
 
-$rw = open(FILE, shift @ARGV);
+sub read_file
+{
+    my ($filename) = @ARG;
+ 
+    open(my $fh, '<', $filename)
+        or die "cannot read file '$filename': $OS_ERROR";
 
-while (defined($i = <FILE>)) {
+    my @input = <$fh>;
+    close $fh;
 
-    if ($i =~ /list:/) {
-        $current_list = $i;
-    }
-
-    if ($current_list =~ 'Segment list:') {
-
-        if ($i =~ /DISKIO\w*\s+(\w+)\s+(\w+)/) {
-            eval('$_start = 0x' . $1 . '; $_end = 0x' . $2);
-        }
-
-        if ($i =~ /DISKIO_ZP/) {
-            $diskio_zp_start = $_start;
-            $diskio_zp_end = $_end;
-        } elsif ($i =~ /DISKIO_INSTALL/) {
-            $diskio_install_start = $_start;
-            $diskio_install_end = $_end;
-        } elsif ($i =~ /DISKIO/) {
-            $diskio_start = $_start;
-            $diskio_end = $_end;
-        }
-    }
-
-    if ($current_list =~ 'Exports list:') {
-
-        if ($i =~ /(\w+)\s+(\w+)\s+\w+\s+(\w+)\s+(\w+)/) {
-
-            eval('$num1 = 0x' . $2 . '; $num2 = 0x' . $4);
-            maybe_print($1, $num1);
-            maybe_print($3, $num2);
-
-        } elsif ($i =~ /(\w+)\s+(\w+)\s+\w+/) {
-
-            eval('$num = 0x' . $2);
-            maybe_print($1, $num);
-        }
-    }
+    return @input;
 }
 
-my @sorted_symbols = sort { @$a[1] <=> @$b[1] } @symbols;
+sub extract_all_symbols
+{
+    my @input = @ARG;
+ 
+    my $current_list;
+    my %diskio_segments;
+    my %symbols;
+    foreach my $i (@input) {
+ 
+        if ($i =~ qr{list.*?:}) {
+            $current_list = $i;
 
-my @oldsymbol;
-print "; zeropage\n";
+        } elsif ($current_list =~ qr{Segment}) {
+            # only check against the DISKIO segments
+            if ($i =~ qr{(DISKIO\w*)\s+(\w+)\s+(\w+)}) {
+                my $label = lc $1;
+                $diskio_segments{$label . '_start'} = hex '0x' . $2;
+                $diskio_segments{$label . '_end'}   = hex '0x' . $3;
+            }
 
-foreach my $symbol (@sorted_symbols) {
-    if ((@oldsymbol[1] < $diskio_install_start) && (@$symbol[1] >= $diskio_install_start)) {
-        print "\n; install\n";
+        } elsif ($current_list =~ qr{Exports}) {
+            # the exported symbols will be filtered by the DISKIO segments
+            if ($i =~ qr{(\w+)\s+(\w+)\s+\w+\s+(\w+)\s+(\w+)}) {
+                # double-entry line
+                $symbols{$1} = hex '0x' . $2;
+                $symbols{$3} = hex '0x' . $4;
+            } elsif ($i =~ qr{(\w+)\s+(\w+)\s+\w+}) {
+                # single-entry line
+                $symbols{$1} = hex '0x' . $2;
+            }
+        }
     }
-    if ((@oldsymbol[1] < $diskio_start) && (@$symbol[1] >= $diskio_start)) {
-        print "\n; resident\n";
+
+    return \%diskio_segments, \%symbols;
+}
+ 
+sub filter_symbols
+{
+    my ($diskio_segments, $symbols) = @ARG;
+ 
+    my %filtered;
+    while (my ($name, $address) = each %$symbols) {
+        # do not regard *fix symbols or all-caps symbols
+        if ($address && ($name !~ /fix|[A-Z]/)) {
+            # only symbols in the DISKIO segments are printed
+            if ((($address >= $diskio_segments->{diskio_start})
+              && ($address <= $diskio_segments->{diskio_end}))
+
+             || (($address >= $diskio_segments->{diskio_install_start})
+              && ($address <= $diskio_segments->{diskio_install_end}))
+
+             || (($address >= $diskio_segments->{diskio_zp_start})
+              && ($address <= $diskio_segments->{diskio_zp_end})))
+            {
+                $filtered{$name} = $address;
+            }
+        }
     }
 
-    printf "%-15s = \$%." . (@$symbol[1] < 256 ? '2' : '4') . "x\n", @$symbol[0], @$symbol[1];
+    return \%filtered;
+}
+ 
+sub print_symbols
+{
+    my ($diskio_segments, $symbols) = @ARG;
+ 
+    my @names_sorted_by_address =
+        sort { $symbols->{$a} <=> $symbols->{$b} } keys %{$symbols};
 
-    @oldsymbol = @$symbol;
+    my $prev_value;
+
+    print "; zeropage\n";
+    foreach my $name (@names_sorted_by_address) {
+        if (defined $prev_value) {
+            if (($prev_value < $diskio_segments->{diskio_install_start})
+             && ($symbols->{$name} >= $diskio_segments->{diskio_install_start})) {
+                print "\n; install\n";
+            }
+
+            if (( $prev_value < $diskio_segments->{diskio_start})
+             && ($symbols->{$name} >= $diskio_segments->{diskio_start})) {
+                print "\n; resident\n";
+            }
+        }
+
+        print_symbol($name, $symbols->{$name});
+        $prev_value = $symbols->{$name};
+    }
+
+    return;
+}
+ 
+sub print_symbol
+{
+    my ($name, $address) = @ARG;
+ 
+    my $address_length = ($address < 256) ? '2' : '4';
+    my $format = '%-15s = $%.' . $address_length . "x\n";
+    printf $format, $name, $address;
+
+    return;
 }

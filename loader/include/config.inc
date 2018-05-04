@@ -5,11 +5,11 @@
 ; Note:
 ;   Please keep in mind that most of the following parameters change the code size.
 ;   For a minimum-size resident portion in the host's memory,
-; set all parameters in the 'increase code size' section to 0,
-; and those in the 'code size reduction' sections to non-0,
-; set PROTOCOL = PROTOCOLS::TWO_BITS_ATN,
-; set FILESYSTEM = FILESYSTEMS::TRACK_SECTOR,
-; and set DECOMPRESSOR = DECOMPRESSORS::NONE
+;   set all parameters in the 'increase code size' section to 0,
+;   and those in the 'code size reduction' sections to non-0,
+;   set PROTOCOL = PROTOCOLS::TWO_BITS_ATN,
+;   set FILESYSTEM = FILESYSTEMS::TRACK_SECTOR,
+;   and set DECOMPRESSOR = DECOMPRESSORS::NONE
 
 
 ; parameters
@@ -20,10 +20,13 @@
 PLATFORM                           = diskio::platform::COMMODORE_64; currently available are COMMODORE_64 and COMMODORE_16
 .endif
 
-; these change installer code
+; these change host-side install code
 
 .define MIN_DEVICE_NO             08 ; these two settings define the device number range when scanning for devices in install.s,
 .define MAX_DEVICE_NO             30 ; devices beyond this range will not be recognized or useable
+
+.define ONLY_1541_AND_COMPATIBLE   0 ; reduces host-side install code by omitting any native custom drive code for non-1541 compatible
+                                     ; drives, treats any drive as 1541, using an incompatible drive will cause undefined behaviour
 
 ; these change both host- and drive-side code
 
@@ -42,12 +45,14 @@ FILESYSTEM                         = FILESYSTEMS::DIRECTORY_NAME; currently avai
 .define DIRTRACK                  18 ; for FILESYSTEM::DIRECTORY_NAME, on 1541/41-C/41-II/70/71/71CR,
                                      ; starting track and sector location of the directory
 .define DIRSECTOR                 00 ; (i.e., the loader's directory can be relocated to hide it from the normal directory command);
-                                     ; ineffective for LOAD_ONCE and when loading via KERNAL with LOAD_VIA_KERNAL_FALLBACK != 0
-.define FILENAME_MAXLENGTH        16 ; maximum length of file name, if a directory is capable of holding longer names, extra characters are ignored
+                                     ; muat be 18/0 when LOAD_ONCE != 0 or LOAD_VIA_KERNAL_FALLBACK != 0
+.define FILENAME_MAXLENGTH        16 ; maximum length of file name, if a directory is capable of holding longer names, extra characters are ignored,
+                                     ; to facilitate dir-art, set to, e.g., 2, then load files as "01*", "02*", etc.
 
 .define MINSTPSP                 $18 ; min. r/w head stepping speed on 1541/41-C/41-II/70/71/71CR
 .define MAXSTPSP                 $10 ; max. r/w head stepping speed on 1541/41-C/41-II/70/71/71CR
 .define STEPRACC                 $1c ; r/w head stepping acceleration on 1541/41-C/41-II/70/71/71CR
+
 
 
 ; features
@@ -77,7 +82,7 @@ FILESYSTEM                         = FILESYSTEMS::DIRECTORY_NAME; currently avai
 .define JUMP_TABLE                 0 ; add a jump table to the beginning of the DISKIO_INSTALL and DISKIO segments, useful when importing the binaries without symbols
 
 .define TWO_BITS_RESEND_OPTIMIZE   1 ; C-64 only: for the TWO_BITS_RESEND protocol, quicker loading by using a table,
-                                     ; but only 0 or 5..8 sprites are allowed outside IRQ handlers
+                                     ; but only 0 or 5..8 sprites on a raster line are allowed outside IRQ handlers
 
 .define LOAD_UNDER_D000_DFFF       0 ; C-64 only: enable loading (and decompression) to the RAM at $D000-$DFFF,
                                      ; the IRQ handlers will need to change $01 to enable the I/O-RAM at $D000..$DFFF,
@@ -132,7 +137,7 @@ FILESYSTEM                         = FILESYSTEMS::DIRECTORY_NAME; currently avai
                                      ; the raw data may occupy these holes - this does not apply if NO_DECOMPLOAD_OPTIMIZATION != 0;
                                      ; requires DECOMPRESSOR != DECOMPRESSORS::NONE
 
-.define LOAD_VIA_KERNAL_FALLBACK   1 ; loads via the KERNAL API if the loader's installation was not successful
+.define LOAD_VIA_KERNAL_FALLBACK   0 ; loads via the KERNAL API if the loader's installation was not successful
                                      ; (i.e., if the loader is not installed due to an incompatible drive (currently everything that is not
                                      ; a 1541, 1541-C, 1541-II, 1570, 1571, 1571CR, or 1581),
                                      ; or true drive emulation being disabled,
@@ -156,7 +161,7 @@ FILESYSTEM                         = FILESYSTEMS::DIRECTORY_NAME; currently avai
                                      ; IRQ conditions when called via ROM vector ($0314) vs. non-ROM vector ($FFFE) - best have ROM enabled
                                      ; before calling the loader, so only the ROM vector IRQ handler is needed (please note that
                                      ; the handler code is delayed a little when being called via $0314 rather than $FFFE).
-                                     ; requires FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
+                                     ; requires FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME and ONLY_1541_AND_COMPATIBLE = 0
 
 .define LOAD_PROGRESS_API          0 ; keeps updating bytesloadedlo/hi while loading with the amount
                                      ; of bytes that have been loaded (not decompressed!) so far;
@@ -190,7 +195,7 @@ DECOMPRESSOR                   = DECOMPRESSORS::DOYNAX_LZ; available are NONE, E
 
 
 ; INEFFECTIVE or DISENCOURAGED
-; following assignments and defines are ineffective or disencouraged in this version
+; following defines are ineffective or disencouraged in this version
 
 ; DISENCOURAGED (unfinished)
 ; changes drive-side code and host-side install code
@@ -202,6 +207,10 @@ DECOMPRESSOR                   = DECOMPRESSORS::DOYNAX_LZ; available are NONE, E
 ; both options enabled at the same time accelerate the loader by ~33% on 1541/41-C/41-II, and ~17% on 1570/71/71CR, and 0% for other drives
 
 ; INEFFECTIVE
+.define CLOSE_FILE_API             0
+
+.define FILE_EXISTS_API            0
+
 .define FAST_FILE_FORMAT           0 ; load all files encoded with the fast file format, this saves up to 1 revolution per track and loading is ~17% faster
                                      ; compared to normal encoding on a 1541/41-C/41-II/70/71/71CR - this has no influence (i.e., only minimal negative influence)
                                      ; on the speed of loading on a 1581/fd/hd,
@@ -229,7 +238,7 @@ DECOMPRESSOR                   = DECOMPRESSORS::DOYNAX_LZ; available are NONE, E
                                      ; this won't work if the loader's drive code is not installed, with the loader being running in the
                                      ; KERNAL fallback mode
 
-; code size reduction to the cost of speed
+; code size reduction at the cost of speed
 
 ; INEFFECTIVE
 .define NO_DECOMPLOAD_OPTIMIZATION 0 ; disables the decompression while loading speed optimization and stalls the drive until a whole block of data
@@ -239,4 +248,4 @@ DECOMPRESSOR                   = DECOMPRESSORS::DOYNAX_LZ; available are NONE, E
                                      ; decreases combined loading + decompressing speed
                                      ; requires DECOMPRESSOR != DECOMPRESSORS::NONE, and SEPARATE_DECOMP = 0
 
-; end ineffective assignments and defines
+; end ineffective defines

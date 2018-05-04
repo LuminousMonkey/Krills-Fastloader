@@ -87,9 +87,9 @@ _COMMON_FEATURES_INC_ = 1
 ;------------------------------------------------------------------------------
 
 .macro DEFAULT_SUPPORTED_DRIVES_FEATS
-    ; generic drive is usually sufficient for applications
-    .byte diskio::SUPPORTED_DRIVE, diskio::drivetype::DRIVE_GENERIC
-    .out "  compatible with generic drives"
+    ; 1541 support is usually sufficient for applications
+    .byte diskio::SUPPORTED_DRIVE, diskio::drivetype::DRIVE_1541
+    .out "  compatible with CBM 1541"
 .endmacro
 
 .macro SUPPORTED_DRIVES_FEATS
@@ -106,10 +106,14 @@ _COMMON_FEATURES_INC_ = 1
         .out "  compatible with CBM 1571"
         .byte diskio::SUPPORTED_DRIVE, diskio::drivetype::DRIVE_1571CR
         .out "  compatible with CBM 1571CR"
+	.if ONLY_1541_AND_COMPATIBLE = 0
         .byte diskio::SUPPORTED_DRIVE, diskio::drivetype::DRIVE_1581
         .out "  compatible with CBM 1581"
+	.endif
+        .if LOAD_VIA_KERNAL_FALLBACK
         .byte diskio::SUPPORTED_DRIVE, diskio::drivetype::DRIVE_GENERIC
         .out "  compatible with generic drives"
+	.endif
     .else
         .ifdef USER_SUPPORTED_DRIVES_FEATS
             .if USER_SUPPORTED_DRIVES_FEATS <> 0
@@ -186,11 +190,13 @@ _COMMON_FEATURES_INC_ = 1
         .byte diskio::NAME
         .out "  file identification by name"
         .byte diskio::FILENAME_MAX, FILENAME_MAXLENGTH
-        .out "  max. file name length FILENAME_MAXLENGTH chars"
+        .out "  max. filename length FILENAME_MAXLENGTH chars"
         .byte diskio::MAX_OPEN, 1
         .out "  max. 1 file open at the same time"
         ; applications usually load files with matching filename lengths
         .out "  extra filename chars ignored not checked"
+		; applications usually do not load via file indices		
+        .out "  no load-next-file call needed"
         ; applications usually don't need wildcards
         .out "  no wildcards needed"
         ; the number of first files accessible is usually sufficient for applications
@@ -210,12 +216,14 @@ _COMMON_FEATURES_INC_ = 1
             .byte diskio::NAME
             .out "  file identification by name"
             .byte diskio::FILENAME_MAX, FILENAME_MAXLENGTH
-            .out "  max. file name length FILENAME_MAXLENGTH chars"
+            .out "  max. filename length FILENAME_MAXLENGTH chars"
             .byte diskio::MAX_OPEN, 1
             .out "  max. 1 file open at the same time"
-            .out "  extra filename chars not ignored"
-            .byte diskio::FILENAME_WILDCARDS, diskio::WILDCARDS_ALLOWED
-            .out "  wildcards in the file name allowed"
+            .byte diskio::IGNORES_EXTRA_CHARS, diskio::DOES_IGNORE_EXTRA_CHARS
+            .out "  extra filename chars are ignored"
+			.byte diskio::EMPTY_FILENAME_IS_NEXT_FILE, diskio::NEXT_FILE_ON_ZERO_LENGTH
+            .out "  zero-length filename specifies next file in dir"
+            .out "  wildcards in the filename not allowed"
             .byte diskio::FIRST_FILES_ACCESSIBLE, diskio::NO_FIRST_FILES_LIMITATION
             .out "  all files in a directory accessible"
         .elseif FILESYSTEM = FILESYSTEMS::TRACK_SECTOR

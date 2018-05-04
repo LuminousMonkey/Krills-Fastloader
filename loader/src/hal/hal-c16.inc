@@ -290,6 +290,7 @@ bitset:     eor #IO_PORT_SERIAL_CLK_OUT
 .endmacro
 
 .macro TRANSFER_TABLE
+            ; nothing
 .endmacro
 
 GETBYTE_SETS_VALUE_FLAGS = 0

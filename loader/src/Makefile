@@ -70,6 +70,8 @@ CONFIG       = $(LDRINC)/config.inc
 endif
 
 INSTALLDEPS  = $(CONFIG) $(BUILDDIR) $(INTERMDIR) \
+               $(INTERMDIR)/symbols1541-kernel-loadfile.inc $(INTERMDIR)/kernelsymbols1541.inc \
+               $(DRIVESDIR)/drivecode-common.inc \
                $(DRIVESDIR)/drivecode1541-kernel.inc $(DRIVESDIR)/drivecode1541.s $(DRIVESDIR)/drivecode1541-loadfile.s $(DRIVESDIR)/drivecode1571.s $(DRIVESDIR)/drivecode1581.s \
                $(HALDIR)/hal.inc $(HALDIR)/hal-c64.inc $(HALDIR)/hal-c16.inc \
                $(INSTALLDIR)/install.s \
@@ -85,17 +87,18 @@ RESIDENTDEPS = $(CONFIG) $(BUILDDIR) $(INTERMDIR) \
 
 BINDEPS      = $(BUILDDIR)/loadersymbols-$(_PLATFORM_).inc $(BUILDDIR)/loader-$(_PLATFORM_).prg $(CONFIG)
 
+
 ifeq ($(_PLATFORM_),c16)
-AS_FLAGS   += -t c16 -D PLATFORM=16
+AS_FLAGS    += -t c16 -D PLATFORM=16
 else
-AS_FLAGS   += -t c64 -D PLATFORM=64
+AS_FLAGS    += -t c64 -D PLATFORM=64
 endif
-AS_FLAGS   += -I . -I $(INCDIR) -I $(LDRINC)
+AS_FLAGS    += -I . -I $(INCDIR) -I $(LDRINC)
 ifneq ($(EXTCONFIGPATH),)
-AS_FLAGS   += -D EXTCONFIGPATH -I $(EXTCONFIGPATH)
+AS_FLAGS    += -D EXTCONFIGPATH -I $(EXTCONFIGPATH)
 endif
 ifneq ($(DEBUG),)
-AS_FLAGS   += -g
+AS_FLAGS    += -g
 endif
 
 
@@ -104,13 +107,9 @@ default: lib
 all: lib prg
 
 # use these targets to build loader.prg and install.prg
-prg: $(BINDEPS)
-bin: prg
-binary: bin
+prg bin binary: $(BINDEPS)
 
-prgzip: $(BUILDDIR)/loader-$(_PLATFORM_).zip
-binzip: prgzip
-binaryzip: binzip
+prgzip binzip binaryzip: $(BUILDDIR)/loader-$(_PLATFORM_).zip
 
 
 lib: lib-basic # lib-full for dynlink stuff
@@ -148,44 +147,65 @@ $(INTERMDIR)/loader-$(_PLATFORM_).o: $(RESIDENTDEPS)
 	$(AS) $(AS_FLAGS) -o $@ $(RESIDENTDIR)/resident.s
 
 $(INTERMDIR)/install-$(_PLATFORM_).o: $(INSTALLDEPS)
-	$(AS) $(AS_FLAGS) --cpu 6502X -o $@ $(INSTALLDIR)/install.s
+	$(AS) $(AS_FLAGS) --cpu 6502X -I $(INTERMDIR) -o $@ $(INSTALLDIR)/install.s
 	# --cpu 6502X for illegal opcodes
 
 
 # binary targets
  # drive-side binaries
-$(INTERMDIR)/drivecode.link: Makefile
-	$(PRINTF) "MEMORY \n{\n DRIVERAM: start = \$$00, size = \$$0800, file = \"$(INTERMDIR)/drivecode1541.prg\";\n}\n\nSEGMENTS\n{\n CODE: load = DRIVERAM;\n}" > $@
-
-$(INTERMDIR)/drivecode1541.o: $(CONFIG) $(DRIVESDIR)/drivecode1541.s $(DRIVESDIR)/drivecode1541-loadfile.s
-	$(AS) $(AS_FLAGS) -D STANDALONE=1 --cpu 6502X -o $@ $(DRIVESDIR)/drivecode1541.s
-	# --cpu 6502X for illegal opcodes
-
-$(INTERMDIR)/drivecode1541.prg $(INTERMDIR)/drivecode1541.prg.map: $(INTERMDIR)/drivecode1541.o $(INTERMDIR)/drivecode.link
-	$(LD) -o $(INTERMDIR)/drivecode1541.prg -C $(INTERMDIR)/drivecode.link $(INTERMDIR)/drivecode1541.o -vm -m $(INTERMDIR)/drivecode1541.prg.map
-	$(RM) a.out
-
-drivecode1541.prg: $(INTERMDIR)/drivecode1541.prg
-
-$(INTERMDIR)/kernelsymbols1541.inc: $(INTERMDIR)/drivecode1541.prg.map
+ 
+ # 1541 kernel with loadfile module
+ # this is mainly needed to resolve circular symbol dependencies between kernel and loadfile module
+$(INTERMDIR)/symbols1541-kernel-loadfile.inc: $(INTERMDIR)/drivecode1541-kernel-loadfile.prg.map
 	$(PERL) drives/make-kernelsymbolsinc.pl $^ > $@
 
-$(INTERMDIR)/drivecode-loadfile.link: Makefile
+$(INTERMDIR)/drivecode1541-kernel-loadfile.link: Makefile
+	$(PRINTF) "MEMORY \n{\n DRIVERAM: start = \$$00, size = \$$0800, file = \"$(INTERMDIR)/drivecode1541-kernel-loadfile.prg\";\n}\n\nSEGMENTS\n{\n CODE: load = DRIVERAM;\n}" > $@
+
+$(INTERMDIR)/drivecode1541-kernel-loadfile.o: $(DRIVESDIR)/drivecode1541.s $(DRIVESDIR)/drivecode1541-loadfile.s $(CONFIG)
+	$(AS) --cpu 6502X $(AS_FLAGS) -D BUILD_KERNEL=1 -D LOADFILE=1 -o $@ $<
+	# --cpu 6502X for illegal op-codes
+
+$(INTERMDIR)/drivecode1541-kernel-loadfile.prg $(INTERMDIR)/drivecode1541-kernel-loadfile.prg.map: $(INTERMDIR)/drivecode1541-kernel-loadfile.o $(INTERMDIR)/drivecode1541-kernel-loadfile.link
+	$(LD) -o $(INTERMDIR)/drivecode1541-kernel-loadfile.prg -C $(INTERMDIR)/drivecode1541-kernel-loadfile.link $(INTERMDIR)/drivecode1541-kernel-loadfile.o -vm -m $(INTERMDIR)/drivecode1541-kernel-loadfile.prg.map
+	$(RM) a.out
+
+drivecode1541-kernel-loadfile.prg: $(INTERMDIR)/drivecode1541-kernel-loadfile.prg
+ 
+ # 1541 kernel
+$(INTERMDIR)/drivecode1541-kernel.link: Makefile
+	$(PRINTF) "MEMORY \n{\n DRIVERAM: start = \$$00, size = \$$0800, file = \"$(INTERMDIR)/drivecode1541-kernel.prg\";\n}\n\nSEGMENTS\n{\n CODE: load = DRIVERAM;\n}" > $@
+
+$(INTERMDIR)/drivecode1541-kernel.o: $(DRIVESDIR)/drivecode1541.s $(INTERMDIR)/symbols1541-kernel-loadfile.inc $(CONFIG)
+	$(AS) --cpu 6502X $(AS_FLAGS) -I $(INTERMDIR) -D BUILD_KERNEL=1 -o $@ $<
+	# --cpu 6502X for illegal op-codes
+
+$(INTERMDIR)/drivecode1541-kernel.prg $(INTERMDIR)/drivecode1541-kernel.prg.map: $(INTERMDIR)/drivecode1541-kernel.o $(INTERMDIR)/drivecode1541-kernel.link
+	$(LD) -o $(INTERMDIR)/drivecode1541-kernel.prg -C $(INTERMDIR)/drivecode1541-kernel.link $(INTERMDIR)/drivecode1541-kernel.o -vm -m $(INTERMDIR)/drivecode1541-kernel.prg.map
+	$(RM) a.out
+
+drivecode1541-kernel.prg: $(INTERMDIR)/drivecode1541-kernel.prg
+
+ # 1541 loadfile module
+$(INTERMDIR)/kernelsymbols1541.inc: $(INTERMDIR)/drivecode1541-kernel.prg.map
+	$(PERL) drives/make-kernelsymbolsinc.pl $^ > $@
+
+$(INTERMDIR)/drivecode1541-loadfile.link: Makefile
 	$(PRINTF) "MEMORY \n{\n DRIVERAM: start = \$$00, size = \$$0800, file = \"../build/drivecode1541-loadfile.prg\";\n}\n\nSEGMENTS\n{\n CODE: load = DRIVERAM;\n}" > $@
 
-$(INTERMDIR)/drivecode1541-loadfile.o: $(DRIVESDIR)/drivecode1541-loadfile.s $(INTERMDIR)/kernelsymbols1541.inc $(DRIVESDIR)/drivecode1541-kernel.inc
-	$(AS) $(AS_FLAGS) -I $(INTERMDIR) -D MODULE=1 --cpu 6502X -o $@ $(DRIVESDIR)/drivecode1541-loadfile.s
-	# --cpu 6502X for illegal opcodes
+$(INTERMDIR)/drivecode1541-loadfile.o: $(DRIVESDIR)/drivecode1541-loadfile.s $(INTERMDIR)/kernelsymbols1541.inc $(DRIVESDIR)/drivecode1541-kernel.inc $(DRIVESDIR)/drivecode-common.inc
+	$(AS) --cpu 6502X $(AS_FLAGS) -I $(INTERMDIR) -D MODULE=1 -o $@ $(DRIVESDIR)/drivecode1541-loadfile.s
+	# --cpu 6502X for illegal op-codes
 
-$(BUILDDIR)/drivecode1541-loadfile.prg: Makefile $(INTERMDIR)/drivecode-loadfile.link $(INTERMDIR)/drivecode1541-loadfile.o
-	$(LD) -o $@ -C $(INTERMDIR)/drivecode-loadfile.link $(INTERMDIR)/drivecode1541-loadfile.o -vm -m $(INTERMDIR)/drivecode1541-loadfile.prg.map
+$(BUILDDIR)/drivecode1541-loadfile.prg $(BUILDDIR)/drivecode1541-loadfile.prg.map: $(INTERMDIR)/drivecode1541-loadfile.o $(INTERMDIR)/drivecode1541-loadfile.link
+	$(LD) -o $(BUILDDIR)/drivecode1541-loadfile.prg -C $(INTERMDIR)/drivecode1541-loadfile.link $< -vm -m $(INTERMDIR)/drivecode1541-loadfile.prg.map
 	$(RM) a.out
 
 drivecode1541-loadfile.prg: $(BUILDDIR)/drivecode1541-loadfile.prg
 
 
  # host-side binaries
-.PHONY: $(INTERMDIR)/binary.link $(BUILDDIR)/loader.prg $(INTERMDIR)/install-nonreloc.o $(BUILDDIR)/install.prg $(INTERMDIR)/loader-nonreloc.o $(INTERMDIR)/loader.map (BUILDDIR)/loadersymbols.inc
+.PHONY: $(INTERMDIR)/binary.link $(BUILDDIR)/loader.prg $(INTERMDIR)/install-nonreloc-$(_PLATFORM_).o $(BUILDDIR)/install.prg $(INTERMDIR)/loader-nonreloc-$(_PLATFORM_).o $(INTERMDIR)/loader.map (BUILDDIR)/loadersymbols.inc
 
 $(INTERMDIR)/loader-nonreloc-$(_PLATFORM_).o: $(RESIDENTDEPS)
 ifeq ($(RESIDENT),)
@@ -271,7 +291,7 @@ $(INTERMDIR)/loader-$(_PLATFORM_).o65.o: $(RESIDENTDEPS)
 	$(AS) $(AS_FLAGS) -D DYNLINK_EXPORT -o $@ $(RESIDENTDIR)/resident.s
 
 $(INTERMDIR)/install-$(_PLATFORM_).o65.o: $(INSTALLDEPS)
-	$(AS) $(AS_FLAGS) -D DYNLINK_EXPORT --cpu 6502X -o $@ $(INSTALLDIR)/install.s
+	$(AS) $(AS_FLAGS) -D DYNLINK_EXPORT --cpu 6502X -I $(INTERMDIR) -o $@ $(INSTALLDIR)/install.s
 	# --cpu 6502X for illegal opcodes
 
 $(INTERMDIR)/install-$(_PLATFORM_).o65: $(INTERMDIR)/install-$(_PLATFORM_).o65.o $(INTERMDIR)/zp-resident.o65.o

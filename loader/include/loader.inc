@@ -148,7 +148,7 @@ fast:       sta TED_CHARGEN_ADDR
 .endif
 
 ; Import the loader code from a dynamically linked library file
-; in:  a/x - lo/hi to import request structure
+; in:  a/x - x: lo, y: hi to import request structure
 ; out: c   - set on error
 ;      a   - diskio::status, on diskio::status::GENERIC_KERNAL_ERROR, the KERNAL error code is returned in x
 ;      x   - if status is diskio::status::OK or diskio::status::DYNLINK_FALLBACK_USED, lo-byte of version string address,
@@ -163,8 +163,8 @@ fast:       sta TED_CHARGEN_ADDR
 .endmacro
 
 ; Install the loader
-; in:  a   - if NONBLOCKING_API is non-0, nmi line mod 8
-;      x/y - if LOAD_ONCE, lo/hi to 0-terminated filename string
+; in:  a   - if NONBLOCKING_API is non-0, NMI line mod 8
+;      x/y - if LOAD_ONCE, x: lo, y: hi to 0-terminated filename string
 ; out: c   - set on error
 ;      a   - status
 ;      x   - drive type (one of diskio::drivetypes)
@@ -201,8 +201,9 @@ IMPORT install
 
 .if LOAD_RAW_API
 ; Load a file without decompression
-; in:  x/y - if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME, lo/hi to 0-terminated filename string
-;            if FILESYSTEM = FILESYSTEMS::TRACK_SECTOR, a: track, x: sector
+; in:  x/y - if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME, x: lo, y: hi to 0-terminated filename string,
+;                                                         zero-length file name will load next file
+;            if FILESYSTEM = FILESYSTEMS::TRACK_SECTOR, x: track, y: sector
 ;      c   - if LOAD_TO_API != 0, c = 0: load to address as stored in the file
 ;                                 c = 1: load to caller-specified address (loadaddrlo/hi)
 ; out: c   - set on error
@@ -218,6 +219,13 @@ IMPORT loadraw
             jsr loadraw
     .endmacro
 
+    .if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
+	.macro LOADNEXTRAW
+	        lda #$00
+			LOADRAW #.lobyte(* - 1), #.hibyte(* - 1)
+	.endmacro
+	.endif
+
     .if LOAD_TO_API
         .macro LOADRAW_LOADTO namelo_or_track, namehi_or_sector, dest_lo, dest_hi
             sec
@@ -229,6 +237,13 @@ IMPORT loadraw
             ldy namehi_or_sector
             jsr loadraw
         .endmacro
+		
+    .if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
+	.macro LOADNEXTRAW_LOADTO dest_lo, dest_hi
+	        lda #$00
+			LOADRAW_LOADTO #.lobyte(* - 1), #.hibyte(* - 1), dest_lo, dest_hi
+	.endmacro
+	.endif
     .endif;  LOAD_TO_API
 .else; LOAD_ONCE
     .macro LOADRAW
@@ -253,13 +268,14 @@ IMPORT loadraw
 
 .if LOAD_COMPD_API
 ; Load a compressed file
-; in:  x/y - if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME, lo/hi to 0-terminated filename string
-;            if FILESYSTEM = FILESYSTEMS::TRACK_SECTOR, a: track, x: sector
+; in:  x/y - if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME, x: lo, y: hi to 0-terminated filename string,
+;                                                         zero-length file name will load next file
+;            if FILESYSTEM = FILESYSTEMS::TRACK_SECTOR, x: track, y: sector
 ;      c   - if DECOMPLOAD_TO_API != 0, c = 0: load to address as stored in the file
 ;                                       c = 1: load to caller-specified address (loadaddrlo/hi)
 ; out: c   - set on error
 ;      a   - status
-;      x/y - if DECOMPRESSOR = DECOMPRESSORS::PUCRUNCH, lo/hi of the loaded file's execution address
+;      x/y - if DECOMPRESSOR = DECOMPRESSORS::PUCRUNCH, x: lo, y: hi of the loaded file's execution address
 IMPORT loadcompd
 .if !LOAD_ONCE
     .macro LOADCOMPD namelo_or_track, namehi_or_sector
@@ -267,6 +283,13 @@ IMPORT loadcompd
             ldy namehi_or_sector
             jsr loadcompd
     .endmacro
+
+    .if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
+	.macro LOADNEXTCOMPD
+	        lda #$00
+			LOADCOMPD #.lobyte(* - 1), #.hibyte(* - 1)
+	.endmacro
+	.endif
 .else; LOAD_ONCE
     .macro LOADCOMPD
             jsr loadcompd
@@ -276,8 +299,9 @@ IMPORT loadcompd
 
 .if NONBLOCKING_API
 ; non-blockingly Load a file without decompression
-; in:  x/y - if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME, lo/hi to 0-terminated filename string
-;            if FILESYSTEM = FILESYSTEMS::TRACK_SECTOR, a: track, x: sector
+; in:  x/y - if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME, x: lo, y: hi to 0-terminated filename string,
+;                                                         zero-length file name will load next file
+;            if FILESYSTEM = FILESYSTEMS::TRACK_SECTOR, x: track, y: sector
 ;      c   - if LOAD_TO_API != 0, c = 0: load to address as stored in the file
 ;                                 c = 1: load to caller-specified address (loadaddrlo/hi)
 ; out: c   - set on error
@@ -293,6 +317,13 @@ IMPORT loadrawnb
             jsr loadrawnb
     .endmacro
 
+    .if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
+	.macro LOADNEXTRAW_NB
+	        lda #$00
+			LOADRAW_NB #.lobyte(* - 1), #.hibyte(* - 1)
+	.endmacro
+	.endif
+
     .if LOAD_TO_API
         .macro LOADRAW_LOADTO_NB namelo_or_track, namehi_or_sector, dest_lo, dest_hi
             sec
@@ -304,6 +335,13 @@ IMPORT loadrawnb
             ldy namehi_or_sector
             jsr loadrawnb
         .endmacro
+
+        .if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
+        .macro LOADNEXTRAW_LOADTO dest_lo, dest_hi
+	        lda #$00
+			LOADRAW_LOADTO #.lobyte(* - 1), #.hibyte(* - 1), dest_lo, dest_hi
+	    .endmacro
+	    .endif
     .endif;  LOAD_TO_API
 .else; LOAD_ONCE
     .macro LOADRAW_NB
@@ -344,12 +382,13 @@ error:
 
 .if OPEN_FILE_POLL_BLOCK_API
 ; Open a file
-; in:  x/y - if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME, lo/hi to 0-terminated filename string
-;            if FILESYSTEM = FILESYSTEMS::TRACK_SECTOR, a: track, x: sector
+; in:  x/y - if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME, x: lo, y: hi to 0-terminated filename string,
+;                                                         zero-length file name will load next file
+;            if FILESYSTEM = FILESYSTEMS::TRACK_SECTOR, x: track, y: sector
 ;      c   - if LOAD_TO_API != 0, c = 0: load to address as stored in the file
 ;                                 c = 1: load to caller-specified address (loadaddrlo/hi)
-; out: c - set on error
-;      a - status
+; out: c   - set on error
+;      a   - status
 IMPORT openfile
 .if !LOAD_ONCE
     .macro OPENFILE namelo_or_track, namehi_or_sector
@@ -360,6 +399,13 @@ IMPORT openfile
             ldy namehi_or_sector
             jsr openfile
     .endmacro
+
+    .if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
+	.macro OPENNEXTFILE
+	        lda #$00
+			OPENFILE #.lobyte(* - 1), #.hibyte(* - 1)
+	.endmacro
+	.endif
 
     .if LOAD_TO_API
         .macro OPENFILE_LOADTO namelo_or_track, namehi_or_sector, dest_lo, dest_hi
@@ -372,6 +418,13 @@ IMPORT openfile
             ldy namehi_or_sector
             jsr openfile
         .endmacro
+		
+        .if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
+	    .macro OPENNEXTFILE_LOADTO dest_lo, dest_hi
+	        lda #$00
+			OPENFILE_LOADTO #.lobyte(* - 1), #.hibyte(* - 1), dest_lo, dest_hi
+	    .endmacro
+	    .endif
     .endif; LOAD_TO_API
 .else; LOAD_ONCE
     .macro OPENFILE
@@ -442,10 +495,10 @@ IMPORT getc
 
 .if GETCHUNK_API
 ; Get an uncompressed chunk from the compressed file stream
-; in:  x/y - lo/hi of chunk size
+; in:  x/y   - x: lo, y: hi of chunk size
 ; out: a     - status
-;      x/y   - lo/hi of chunk address
-;      p4/p5 - lo/hi of retrieved chunk size
+;      x/y   - x: lo, y: hi of chunk address
+;      p4/p5 - x: lo, y: hi of retrieved chunk size
 ;      c     - set on error
 IMPORT getchunk
 .macro GETCHUNK sizelo, sizehi
@@ -457,10 +510,10 @@ IMPORT getchunk
 
 .if MEM_DECOMP_API
 ; Decompress a compressed file from memory
-; in:  x/y - lo/hi of compressed file in memory
+; in:  x/y - x: lo, y: hi of compressed file in memory
 ;      c   - if MEMDECOMP_TO_API != 0, c = 0: decompress to address as stored in the file
 ;                                      c = 1: decompress to caller-specified address (loadaddrlo/hi)
-; out: x/y - if DECOMPRESSOR = DECOMPRESSORS::PUCRUNCH, lo/hi of the file's execution address
+; out: x/y - if DECOMPRESSOR = DECOMPRESSORS::PUCRUNCH, x: lo, y: hi of the file's execution address
 IMPORT memdecomp
 .macro MEMDECOMP source_lo, source_hi
     .if MEM_DECOMP_TO_API
@@ -486,9 +539,9 @@ IMPORT memdecomp
 
 .if CHAINED_COMPD_FILES
 ; Decompress a subsequent compressed file from memory
-; in:  c - if MEMDECOMP_TO_API != 0, c = 0: decompress to address as stored in the file
-;                                    c = 1: decompress to caller-specified address (loadaddrlo/hi)
-; out: x/y - if DECOMPRESSOR = DECOMPRESSORS::PUCRUNCH, lo/hi of the file's execution address
+; in:  c   - if MEMDECOMP_TO_API != 0, c = 0: decompress to address as stored in the file
+;                                      c = 1: decompress to caller-specified address (loadaddrlo/hi)
+; out: x/y - if DECOMPRESSOR = DECOMPRESSORS::PUCRUNCH, x: lo, y: hi of the file's execution address
 IMPORT cmemdecomp
 .macro CMEMDECOMP
     .if MEM_DECOMP_TO_API

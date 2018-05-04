@@ -1,39 +1,87 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
+ 
+=head1 NAME
+ 
+make-kernelsymbolsinc.pl
+ 
+=head1 DESCRIPTION
+ 
+This script extracts relevant symbols from a ld65-generated map file.
+The resulting include file can be included in third-party assembly source code.
+ 
+=head1 SYNOPSIS
+ 
+  make-kernelsymbolsinc.pl drivecode1541.prg.map > kernelsymbols1541.inc
+ 
+=cut
+ 
+use strict;
+use warnings;
 
-sub maybe_print {
-    my $name = shift @_;
-    my $address = shift @_;
+use English qw( -no_match_vars ); # OS_ERROR etc.
+ 
+ 
+main();
+ 
+sub main
+{
+	my @input = read_file($ARGV[0]);
+	my $symbols = extract_symbols(@input);
+	my @names_sorted_by_address =
+	    sort { $symbols->{$a} <=> $symbols->{$b} } keys %{$symbols};
 
-    my @symbol = ($name, $address);
-    push(@symbols, \@symbol);
+	foreach my $name (@names_sorted_by_address) {
+		print_symbol($name, $symbols->{$name});
+	}
+
+	return;
 }
+ 
+sub read_file
+{
+	my ($filename) = @ARG;
+ 
+	open(my $fh, '<', $filename)
+	    or die "cannot read file '$filename': $OS_ERROR";
 
-$rw = open(FILE, shift @ARGV) or die('failed to open input file');
+	my @input = <$fh>;
+	close $fh;
 
-while (defined($i = <FILE>)) {
-
-    if ($i =~ /list:/) {
-        $current_list = $i;
-    }
-
-    if ($current_list =~ 'Exports list:') {
-
-        if ($i =~ /(\w+)\s+(\w+)\s+\w+\s+(\w+)\s+(\w+)/) {
-
-            eval('$num1 = 0x' . $2 . '; $num2 = 0x' . $4);
-            maybe_print($1, $num1);
-            maybe_print($3, $num2);
-
-        } elsif ($i =~ /(\w+)\s+(\w+)\s+\w+/) {
-
-            eval('$num = 0x' . $2);
-            maybe_print($1, $num);
-        }
-    }
+	return @input;
 }
+ 
+sub extract_symbols
+{
+	my @input = @ARG;
+ 
+	my %symbols;
+	my $current_list;
+	foreach my $i (@input) {
+ 
+		if ($i =~ qr{list.*?:}) {
+			$current_list = $i;
+		} elsif ($current_list =~ qr{Exports}) {
+			if ( $i =~ qr{(\w+)\s+(\w+)\s+\w+\s+(\w+)\s+(\w+)} ) {
+				# double-entry line
+				$symbols{$1} = hex '0x' . $2;
+				$symbols{$3} = hex '0x' . $4;
+			} elsif ($i =~ qr{(\w+)\s+(\w+)\s+\w+}) {
+				# single-entry line
+				$symbols{$1} = hex '0x' . $2;
+			}
+		}
+	}
 
-my @sorted_symbols = sort { @$a[1] <=> @$b[1] } @symbols;
+	return \%symbols;
+}
+ 
+sub print_symbol
+{
+	my ($name, $address) = @ARG;
+ 
+	my $address_length = ($address < 256) ? 2 : 4;
+	my $printf_arg = '%-15s = $%.' . $address_length . "x\n";
+	printf $printf_arg, $name, $address;
 
-foreach my $symbol (@sorted_symbols) {
-    printf "%-15s = \$%." . (@$symbol[1] < 256 ? '2' : '4') . "x\n", @$symbol[0], @$symbol[1];
+	return;
 }

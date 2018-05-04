@@ -20,14 +20,17 @@
 PLATFORM                           = diskio::platform::COMMODORE_64; currently available are COMMODORE_64 and COMMODORE_16
 .endif
 
-; these change installer code
+; these change host-side install code
 
 .define MIN_DEVICE_NO             08 ; these two settings define the device number range when scanning for devices in install.s,
 .define MAX_DEVICE_NO             30 ; devices beyond this range will not be recognized or useable
 
+.define ONLY_1541_AND_COMPATIBLE   0 ; reduces host-side install code by omitting any native custom drive code for non-1541 compatible
+                                     ; drives, treats any drive as 1541, using an incompatible drive will cause undefined behaviour
+
 ; these change both host- and drive-side code
 
-PROTOCOL                           = PROTOCOLS::TWO_BITS_RESEND; currently available are TWO_BITS_RESEND and TWO_BITS_ATN
+PROTOCOL                           = PROTOCOLS::TWO_BITS_ATN; currently available are TWO_BITS_RESEND and TWO_BITS_ATN
 
 FILESYSTEM                         = FILESYSTEMS::DIRECTORY_NAME; currently available are DIRECTORY_NAME and TRACK_SECTOR
 
@@ -42,8 +45,9 @@ FILESYSTEM                         = FILESYSTEMS::DIRECTORY_NAME; currently avai
 .define DIRTRACK                  18 ; for FILESYSTEM::DIRECTORY_NAME, on 1541/41-C/41-II/70/71/71CR,
                                      ; starting track and sector location of the directory
 .define DIRSECTOR                 00 ; (i.e., the loader's directory can be relocated to hide it from the normal directory command);
-                                     ; ineffective for LOAD_ONCE and when loading via KERNAL with LOAD_VIA_KERNAL_FALLBACK != 0
-.define FILENAME_MAXLENGTH        16 ; maximum length of file name, if a directory is capable of holding longer names, extra characters are ignored
+                                     ; muat be 18/0 when LOAD_ONCE != 0 or LOAD_VIA_KERNAL_FALLBACK != 0
+.define FILENAME_MAXLENGTH        16 ; maximum length of file name, if a directory is capable of holding longer names, extra characters are ignored,
+                                     ; to facilitate dir-art, set to, e.g., 2, then load files as "01*", "02*", etc.
 
 .define MINSTPSP                 $18 ; min. r/w head stepping speed on 1541/41-C/41-II/70/71/71CR
 .define MAXSTPSP                 $10 ; max. r/w head stepping speed on 1541/41-C/41-II/70/71/71CR
@@ -77,7 +81,7 @@ FILESYSTEM                         = FILESYSTEMS::DIRECTORY_NAME; currently avai
 .define JUMP_TABLE                 0 ; add a jump table to the beginning of the DISKIO_INSTALL and DISKIO segments, useful when importing the binaries without symbols
 
 .define TWO_BITS_RESEND_OPTIMIZE   1 ; C-64 only: for the TWO_BITS_RESEND protocol, quicker loading by using a table,
-                                     ; but only 0 or 5..8 sprites are allowed outside IRQ handlers
+                                     ; but only 0 or 5..8 sprites on a raster line are allowed outside IRQ handlers
 
 .define LOAD_UNDER_D000_DFFF       0 ; C-64 only: enable loading (and decompression) to the RAM at $D000-$DFFF, this slows down loading quite a bit.
                                      ; the IRQ handlers will need to change $01 to enable the I/O-RAM at $D000..$DFFF,

@@ -25,6 +25,7 @@ VIA_T1C_H  = $1c05; this symbol is used for watchdog servicing on CMD FD
 .importzp BLOCKDESTLO
 
 
+.if ONLY_1541_AND_COMPATIBLE = 0
 .import c1570fix0
 .import c1570fix1
 .import c1570fix2
@@ -32,10 +33,11 @@ VIA_T1C_H  = $1c05; this symbol is used for watchdog servicing on CMD FD
 .import cmdfdfix0
 .import cmdfdfix1
 .import cmdfdfix2
-.if !DISABLE_WATCHDOG
+    .if !DISABLE_WATCHDOG
 .import cmdfdfix3
 .import cmdfdfix4
-.endif
+    .endif; !DISABLE_WATCHDOG
+.endif; ONLY_1541_AND_COMPATIBLE = 0
 
 
 USE_GENERIC_DRIVE = 0
@@ -97,8 +99,8 @@ endinstjmptable:
 GENERIC_INSTALL = 0; INSTALL_FROM_DISK; XXX TODO
 
 .if GENERIC_INSTALL = 0
-            ; unfortunately, scopes must be defined before using them, this is why the install code is moved to after the drive code
-
+            ; unfortunately, scopes must be defined before using them,
+	    ; this is why the install code is moved to after the drive code
 .scope cbm1541
 drivecode41:
             .include "drives/drivecode1541.s"
@@ -107,22 +109,24 @@ drivecode41:
     .endif
 .endscope
 
+    .if ONLY_1541_AND_COMPATIBLE = 0
 .scope cbm1571
 drivecode71:
             .include "drives/drivecode1571.s"
-    .if UNINSTALL_RUNS_DINSTALL
+        .if UNINSTALL_RUNS_DINSTALL
             .export drivecode71 : absolute
-    .endif
+        .endif
 .endscope
 
 .scope cbm1581
 drivecode81:
             .include "drives/drivecode1581.s"
-    .if UNINSTALL_RUNS_DINSTALL
+        .if UNINSTALL_RUNS_DINSTALL
             .export drivecode81 : absolute
-    .endif
+        .endif
 .endscope
-.endif; !GENERIC_INSTALL
+    .endif; ONLY_1541_AND_COMPATIBLE = 0
+.endif; GENERIC_INSTALL = 0
 
 
 
@@ -169,7 +173,7 @@ install:
 :           lda #MIN_DEVICE_NO; FA does not contain a drive address (MIN_DEVICE_NO..MAX_DEVICE_NO), try MIN_DEVICE_NO first
 :           pha
 
-.if PROTOCOL = PROTOCOLS::TWO_BITS_ATN
+.if (PROTOCOL = PROTOCOLS::TWO_BITS_ATN) | (PROTOCOL = PROTOCOLS::TWO_BITS_RESEND)
             ; check if there is more than 1 drive on the serial bus,
             ; to make sure the 2bit+ATN protocol can work alright,
             ; this is done via the low-level serial bus routines,
@@ -217,7 +221,7 @@ nodrive:    jsr UNLSTN
             cpx #MAX_DEVICE_NO + 1
             bne checkbus
 
-.endif; PROTOCOL = PROTOCOLS::TWO_BITS_ATN
+.endif; (PROTOCOL = PROTOCOLS::TWO_BITS_ATN) | (PROTOCOL = PROTOCOLS::TWO_BITS_RESEND)
 
             ; find first available drive,
             ; this is done via the high-level open/read/close routines,
@@ -225,9 +229,9 @@ nodrive:    jsr UNLSTN
             lda #diskio::status::OK
             sta STATUS
             pla; current drive
-.if PROTOCOL = PROTOCOLS::TWO_BITS_ATN
+.if (PROTOCOL = PROTOCOLS::TWO_BITS_ATN) | (PROTOCOL = PROTOCOLS::TWO_BITS_RESEND)
             and #%01111111; clear (more-than)-one-drive flag
-.endif; PROTOCOL = PROTOCOLS::TWO_BITS_ATN
+.endif; (PROTOCOL = PROTOCOLS::TWO_BITS_ATN) | (PROTOCOL = PROTOCOLS::TWO_BITS_RESEND)
 
             ; find first available drive
             sta FA
@@ -279,8 +283,8 @@ drivefound: ; read error channel to stop potentially blinking error LED
 
             ; XXX TODO
 
-.else; !GENERIC_INSTALL
-
+.else; GENERIC_INSTALL = 0
+    .if ONLY_1541_AND_COMPATIBLE = 0
             ; check if drive allows code upload and execution
             lda #.lobyte($0300)
             ldx #.hibyte($0300)
@@ -307,14 +311,14 @@ drivefound: ; read error channel to stop potentially blinking error LED
             cmp drvchkval
             bne usegeneric
             
-    .if USE_GENERIC_DRIVE
+        .if USE_GENERIC_DRIVE
             jmp usegeneric
-    .endif
+        .endif
 
             ; drive allows code upload and execution,
             ; check which model the drive is and upload corresponding drive code
 
-.ifdef cbm1541::CX500
+         .ifdef cbm1541::CX500
             lda #.lobyte($fbaa)
             ldx #.hibyte($fbaa)
             jsr memreadbyt
@@ -324,16 +328,16 @@ drivefound: ; read error channel to stop potentially blinking error LED
             bne :+
             jmp is1541
 :
-.endif
+         .endif
             ; check if running on a 1541/70/71 compatible drive
             lda #.lobyte($e5c6)
             ldx #.hibyte($e5c6)
             jsr memreadbyt
 
-.ifndef cbm1541::CX500
+        .ifndef cbm1541::CX500
             cmp #'4'
             beq is1541
-.endif
+        .endif
             cmp #'7'
             beq is157x
 
@@ -359,10 +363,10 @@ drivefound: ; read error channel to stop potentially blinking error LED
             bne isfd2000
             iny; diskio::drivetype::DRIVE_CMD_FD_4000
 isfd2000:   
-    .if !DISABLE_WATCHDOG
+        .if !DISABLE_WATCHDOG
             lda #$ff
             ldx #.lobyte(VIA_T1C_H)
-    .endif
+        .endif
             bne iscmdfd; jmp
 
             ; check if 1581
@@ -374,23 +378,23 @@ check1581:  lda #.lobyte($a6e9)
             beq is1581
 
 usegeneric: ; no compatible drive found
-    .if LOAD_VIA_KERNAL_FALLBACK & LOAD_ONCE
+        .if LOAD_VIA_KERNAL_FALLBACK & LOAD_ONCE
             jsr openfile; exception on error
-    .endif
+        .endif
 
             plp; i-flag restore
             lda #diskio::status::DEVICE_INCOMPATIBLE
-    .if diskio::status::DEVICE_INCOMPATIBLE = diskio::drivetype::DRIVE_GENERIC
+        .if diskio::status::DEVICE_INCOMPATIBLE = diskio::drivetype::DRIVE_GENERIC
             tax
-    .else
+        .else
             ldx #diskio::drivetype::DRIVE_GENERIC
-    .endif
+        .endif
             ldy #BLOCKDESTLO
-    .if LOAD_VIA_KERNAL_FALLBACK
+        .if LOAD_VIA_KERNAL_FALLBACK
             clc; this is not to be regarded as an error
-    .else
+        .else
             sec
-    .endif
+        .endif
             rts
 
             ; select appropriate drive code
@@ -448,15 +452,14 @@ is1581:     lda #OPC_JMP_ABS
             sta cmdfdfix1 - cbm1581::drvcodebeg81 + cbm1581::drivecode81
             lda #.hibyte($022b); DIRTRACK81
             sta cmdfdfix2 - cbm1581::drvcodebeg81 + cbm1581::drivecode81
-     .if !DISABLE_WATCHDOG
+        .if !DISABLE_WATCHDOG
             lda #COUNT_TA_UNDF | FORCE_LOAD | ONE_SHOT | TIMER_START
             ldx #.lobyte(CIA_CRB)
 iscmdfd:    sta cmdfdfix3 - cbm1581::drvcodebeg81 + cbm1581::drivecode81
             stx cmdfdfix4 - cbm1581::drvcodebeg81 + cbm1581::drivecode81
-    .else
+        .else
 iscmdfd:
-    .endif
-
+       .endif
 
 selectdcod: sty drivetype
             ldx dcodeseltb - diskio::drivetype::DRIVE_1541,y
@@ -478,10 +481,36 @@ selectdcod: sty drivetype
             sta dcodesel7
             lda dcodeselt8,x
             sta dcodesel8
-.endif; !GENERIC_INSTALL
 
             cpy #diskio::drivetype::DRIVE_1581
-            bcs :++
+            bcs nofaststep
+
+    .else; ONLY_1541_AND_COMPATIBLE
+
+            lda #diskio::drivetype::DRIVE_1541
+	    sta drivetype
+            lda #.lobyte(cbm1541::dinstall  - cbm1541::drvcodebeg41 + cbm1541::drivecode41)
+            sta dcodesel0
+            lda #.hibyte(cbm1541::dinstall  - cbm1541::drvcodebeg41 + cbm1541::drivecode41)
+            sta dcodesel1
+            lda #.lobyte(cbm1541::drvprgend41 - cbm1541::drvcodeend41)
+            sta dcodesel2
+            lda #.lobyte(cbm1541::drivecode41)
+            sta dcodesel3
+            lda #.hibyte(cbm1541::drivecode41)
+            sta dcodesel4
+            lda #.hibyte(cbm1541::dinstall)
+            sta dcodesel5
+            lda #.lobyte(cbm1541::dinstall)
+            sta dcodesel6
+            lda #.hibyte(cbm1541::dinstall)
+            sta dcodesel7
+            lda #.lobyte(cbm1541::dinstall)
+            sta dcodesel8
+
+    .endif; ONLY_1541_AND_COMPATIBLE
+.endif; !GENERIC_INSTALL
+
             ; quicker head stepping on 1541/71
             jsr drvlistn
             ldx #$06
@@ -490,10 +519,11 @@ selectdcod: sty drivetype
             dex
             bpl :-
             jsr UNLSTN
-:
+nofaststep:
 .if LOAD_ONCE | INSTALL_FROM_DISK
             jsr openfile; exception on error
 .endif
+            ; install the custom drive code
             jsr drvlistn
 
             ldx #$00
@@ -590,7 +620,7 @@ install:
             bcc :+
             cmp #diskio::status::DEVICE_INCOMPATIBLE
             beq :+
-        .if PROTOCOL = PROTOCOLS::TWO_BITS_ATN
+	.if (PROTOCOL = PROTOCOLS::TWO_BITS_ATN) | (PROTOCOL = PROTOCOLS::TWO_BITS_RESEND)
             cmp #diskio::status::TOO_MANY_DEVICES
             sec
             bne piniterr
@@ -685,7 +715,10 @@ kernalerr:  pla
 
 .if LOAD_ONCE | INSTALL_FROM_DISK
 
-openfile:   jsr chk2sided
+openfile:   
+.if ONLY_1541_AND_COMPATIBLE = 0
+            jsr chk2sided
+.endif; ONLY_1541_AND_COMPATIBLE = 0
 
             lda #KERNALFILENO
             ldx FA
@@ -751,6 +784,7 @@ fileerror:  jsr CHRIN
 
 .endif; LOAD_ONCE | INSTALL_FROM_DISK
 
+.if ONLY_1541_AND_COMPATIBLE = 0
 chk2sided:  lda drivetype
             cmp #diskio::drivetype::DRIVE_1571
             beq chk2sidedx
@@ -766,6 +800,7 @@ chk2sidedx: jsr drvlistn
             jsr UNLSTN
 
 no1571:     rts
+.endif; ONLY_1541_AND_COMPATIBLE = 0
 
 drvchkon:   .byte "m-r", .lobyte($0300), .hibyte($0300)
 
@@ -784,10 +819,12 @@ dcodesel7 = * + $00
 dcodesel8 = * + $01
 droutrun:   .byte $00, $00, "e-m"; read backward
 drvfaststp: .byte MINSTPSP, $01, .hibyte(VIA2_T1L_H), .lobyte(VIA2_T1L_H), "w-m"; read backward
+
+.if ONLY_1541_AND_COMPATIBLE = 0
+
 twosided:   .byte "1m>0u"; read backward
 
-.if GENERIC_INSTALL = 0
-
+    .if GENERIC_INSTALL = 0
 dcodeseltb: .byte diskio::drivetype::DRIVES_1541    , diskio::drivetype::DRIVES_1541    , diskio::drivetype::DRIVES_1541    ; drivecode1541 for 1541, 1541-C, 1541-II
             .byte 0; 1551
             .byte diskio::drivetype::DRIVES_157X - 1, diskio::drivetype::DRIVES_157X - 1, diskio::drivetype::DRIVES_157X - 1; drivecode1571 for 1570, 1571, 1571CR
@@ -820,13 +857,14 @@ dcodeselt7: .byte .hibyte(cbm1541::dinstall)
 dcodeselt8: .byte .lobyte(cbm1541::dinstall)
             .byte .lobyte(cbm1571::dinstall)
             .byte .lobyte(cbm1581::dinstall)
-
-.endif; !GENERIC_INSTALL
+    .endif; GENERIC_INSTALL = 0
+.endif; ONLY_1541_AND_COMPATIBLE = 0
 
 
 version:    .byte "Krill's Loader, version ", REPOSITORY_VERSION, ", configuration "
             itoa4 MIN_DEVICE_NO
             itoa8 MAX_DEVICE_NO
+            itoa1 ONLY_1541_AND_COMPATIBLE
             .byte '.'
             itoa8 PLATFORM
             .byte '.'

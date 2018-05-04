@@ -53,28 +53,28 @@ side1file:  lda #COLOUR_BLACK
 
 .if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
 
-			LOADRAW #<filename1, #>filename1; filename1 is only found on the first side
-			bcc side2file; branch on success
-			cmp #diskio::status::FILE_NOT_FOUND
+            LOADRAW #<filename1, #>filename1; filename1 is only found on the first side
+            bcc side2file; branch on success
+            cmp #diskio::status::FILE_NOT_FOUND
             bne error
 
 .elseif FILESYSTEM = FILESYSTEMS::TRACK_SECTOR
 
 ID = $0400
 
-			LOADRAW trackid, sectorid; load side ID
-			bcs waitside1
-			lda id
-			cmp #'a'; $41
-			bne waitside1
+            LOADRAW trackid, sectorid; load side ID
+            bcs waitside1
+            lda id
+            cmp #'a'; $41
+            bne waitside1
 
-			LOADRAW track1, sector1
-			bcc side2file; branch on success
+            LOADRAW track1, sector1
+            bcc side2file; branch on success
 
 .endif; FILESYSTEM = FILESYSTEMS::TRACK_SECTOR
 
-waitside1:	inc BORDERCOLOUR
-			jmp side1file
+waitside1:    inc BORDERCOLOUR
+            jmp side1file
 
 
 side2file:  lda #COLOUR_BLACK
@@ -82,26 +82,26 @@ side2file:  lda #COLOUR_BLACK
 
 .if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
 
-			LOADRAW #<filename2, #>filename2; filename2 is only found on the second side
-			bcc side1file; branch on success
-			cmp #diskio::status::FILE_NOT_FOUND
+            LOADRAW #<filename2, #>filename2; filename2 is only found on the second side
+            bcc side1file; branch on success
+            cmp #diskio::status::FILE_NOT_FOUND
             bne error
 
 .elseif FILESYSTEM = FILESYSTEMS::TRACK_SECTOR
 
-			LOADRAW trackid, sectorid; load side ID
-			bcs waitside2
-			lda id
-			cmp #'b'; $42
-			bne waitside2
+            LOADRAW trackid, sectorid; load side ID
+            bcs waitside2
+            lda id
+            cmp #'b'; $42
+            bne waitside2
 
-			LOADRAW track2, sector2
-			bcc side1file; branch on success
+            LOADRAW track2, sector2
+            bcc side1file; branch on success
 
 .endif; FILESYSTEM = FILESYSTEMS::TRACK_SECTOR
 
 waitside2:  inc BORDERCOLOUR
-			jmp side2file
+            jmp side2file
 
 
 error:      ldx #COLOUR_BLACK

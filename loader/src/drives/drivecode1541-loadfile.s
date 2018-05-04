@@ -8,14 +8,20 @@
     __NO_LOADER_SYMBOLS_IMPORT = 1
     .include "loader.inc"
     .include "drives/drivecode1541-kernel.inc"
+    .include "drives/drivecode-common.inc"
     .include "kernelsymbols1541.inc"
 
     .org RUNMODULE - 3
+
+    ; module header
     .word * - 2
-
     .byte (MODULEEND - MODULESTART + 3) / 256 + 1; number of module blocks, not quite accurate, but works for now
-.endif; MODULE
 
+MODULESTART:
+
+.else; !MODULE
+     .export blocksize : absolute
+.endif; !MODULE
 
 TEMPTRACKLINKTAB         = $0780
 TEMPSECTORLINKTAB        = $07c0
@@ -47,9 +53,6 @@ SECTORCOUNT              = UNUSED_ZP1
     DIRBUFFSIZE41        = DIRBUFFSIZE
     .export DIRBUFFSIZE41
 
-    NEW_DISK_VALUE       = $ff
-    LOAD_FILE_VALUE      = $7f
-
             .assert !(((LOWMEMEND - DIRBUFFER) & 3) = 1), error, "***** 1 wasted code byte. *****"
             .assert !(((LOWMEMEND - DIRBUFFER) & 3) = 2), error, "***** 2 wasted code bytes. *****"
             .assert !(((LOWMEMEND - DIRBUFFER) & 3) = 3), error, "***** 3 wasted code bytes. *****"
@@ -59,26 +62,10 @@ SECTORCOUNT              = UNUSED_ZP1
 .endif; (::FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME) && (LOAD_ONCE = 0)
 
 
-MODULESTART:
-            ; get starting track and sector of the file to load
-
 .if !LOAD_ONCE
     .if ::FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
 
-            ldx #LOAD_FILE_VALUE
-            lda DIRCYCLEFLAG; if #files < dirbuffsize (DIRCYCLEFLAG = $00),
-            beq getfilenam  ; don't reset DIRCYCLEFLAG to $7f
-            stx DIRCYCLEFLAG
-getfilenam: jsr dgetbyte; get filename
-            beq :+
-            inx
-            sta <(FILENAME - LOAD_FILE_VALUE - 1),x
-            cpx #<(FILENAME_MAXLENGTH - 2 - LOAD_FILE_VALUE)
-            bne getfilenam
-:           jsr drwaitrkch; disables watchdog
-            jsr gethashval
-            sta FILENAMEHASH1
-            stx FILENAMEHASH0
+            GET_FILENAME 1541
 
     .elseif ::FILESYSTEM = FILESYSTEMS::TRACK_SECTOR
 
@@ -121,172 +108,9 @@ spinuploop: ldy #ANYSECTOR; get any block on the current track, no sector link s
 
 .if (::FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME) && (!LOAD_ONCE)
 
-            lda DISKCHANGED
-            beq samedisk
-
-newdisk:    ; a new disk has been inserted
-            lda #DIRTRACK
-            ldy #DIRSECTOR
-            jsr getblkstid; store id, sector link sanity check
-            bcs newdisk
-           ;ldy LINKSECTOR
-            sty CYCLESTARTENDSECTOR
-
-            ; filldirbuf -
-            ; directory cycling: fill the dir buffer,
-            ; this is also executed upon file not found in
-            ; the current directory segment buffered (with y
-            ; containing NEXTDIRBLOCKSECTOR's value)
-
-            ldx #NEW_DISK_VALUE
-            SKIPWORD
-filldirbuf: ldx #LOAD_FILE_VALUE
-            stx DIRCYCLEFLAG
-            ldx #$ff
-            stx WRAPFILEINDEX
-            inx
-            stx NUMFILES
-nextdirsct: ; y contains the current dir sector number
-            lda #DIRTRACK
-            jsr getblkchid; compare id, sector link sanity check
-            bcs newdisk; start over on error
-           ;ldy LINKSECTOR
-            stx CURRDIRBLOCKSECTOR
-           ;lda LINKTRACK
-            bne :+
-            ; wrap around to first dir block
-            ldy #DIRSECTOR + 1
-:           sty NEXTDIRBLOCKSECTOR
-
-            ldy #$03
-getdirloop: jsr gcrdecode; get file's start track
-           ;ldx NUMFILES
-            sta DIRTRACKS,x
-            tax          ; skip non-files
-            beq dnotafile; denoted by track 0
-            jsr gcrdecode; get file's start sector
-            sta DIRSECTORS,x
-
-            jsr fnamehash
-            pha
-            txa
-            ldx NUMFILES; x is trashed in fnamehash
-            sta FILENAMEHASHVAL0,x
-            pla
-            sta FILENAMEHASHVAL1,x
-
-            ; advance to next file or quit loop
-            inc NUMFILES
-            cpx #DIRBUFFSIZE - 1
-            lda CURRDIRBLOCKSECTOR
-            bcs dirbuffull
-            
-            ; little flaw for the sake of saving on code size:
-            ; when starting to cycle through the directory, the
-            ; files in the dir block the last file currently in the dir
-            ; buffer is in, will all be added to the buffer when it will
-            ; be filled on the subsequent file load - this is why the
-            ; minimum dir buffer size is 9 files
-dnotafile:  tya
-            and #%11100000; 8 entries per block, $20 bytes per entry
-           ;clc
-            adc #$23
-            tay
-            bcc getdirloop ; process all entries in a dir block
-
-            ldy NEXTDIRBLOCKSECTOR; y is getblk sector argument
-            cpy #DIRSECTOR + 1
-            bne :+
-            stx WRAPFILEINDEX
-:           cpy CYCLESTARTENDSECTOR
-            bne nextdirsct
-            
-            ; cycle complete
-            inc DIRCYCLEFLAG; $ff->$00 or $7f->$80
-            SKIPWORD
-dirbuffull: sta NEXTDIRBLOCKSECTOR
-
-            ; the disk was not changed, or the dir has just been read
-samedisk:   lda #$00; clear new disk flag
-            sta DISKCHANGED
-            ldx NUMFILES
-nextfile:   dex
-            bpl findfile; check all dir entries in the buffer
-
-            ; the dir buffer does not contain the file,
-            ; so cycle through the directory to find it
-
-            ldy NEXTDIRBLOCKSECTOR
-            lda DIRCYCLEFLAG; cycle until the
-            lsr             ; cycle is
-            bcs filldirbuf  ; complete
-            sec
-            jmp filenotfnd
-
-            ; must not change y
-fnamehash:  ldx #.lobyte(-$01 - LOAD_FILE_VALUE - 1)
-:           stx GCRBUFFER + $00
-            jsr gcrdecode
-            ldx GCRBUFFER + $00
-            cmp #' ' | $80; $a0 = end of filename
-            beq gethashval
-            inx
-            sta <(FILENAME - LOAD_FILE_VALUE - 1),x
-            cpx #<(FILENAME_MAXLENGTH - 2 - LOAD_FILE_VALUE)
-            bne :-
-
-            ; must not change y
-            ; x = length of filename + LOAD_FILE_VALUE + 1
-gethashval: clc
-            stx HASHVALUE0LO
-            stx HASHVALUE0HI
-            stx HASHVALUE1LO
-            stx HASHVALUE1HI
-hashloop:   lda <(FILENAME - LOAD_FILE_VALUE - 1),x
-            adc HASHVALUE0LO
-            sta HASHVALUE0LO
-            bcc :+
-            inc HASHVALUE0HI
-           ;clc; saved for size reasons            
-:           adc HASHVALUE1LO
-            sta HASHVALUE1LO
-            lda HASHVALUE0HI
-            adc HASHVALUE1HI
-            sta HASHVALUE1HI
-            dex
-            bmi hashloop
-            adc HASHVALUE1LO
-            tax
-            lda HASHVALUE0LO
-            adc HASHVALUE0HI
-            rts
-
-findfile:   lda FILENAMEHASH0
-            eor FILENAMEHASHVAL0,x
-            bne nextfile
-            lda FILENAMEHASH1
-            eor FILENAMEHASHVAL1,x
-            bne nextfile
-
-            ; file found
-
-            stx FILEINDEX; store index of file to jump to the track of the file
-                         ; following this one in the dir, after loading
-
-            ; store number of the dir block loaded last,
-            ; it is used to start the dir check cycle if
-            ; the next file is not found in the dir buffer;
-            ; it is also checked on the subsequent load to determine if the
-            ; dir check cycle is complete and the file be said to be not found
-            lda CURRDIRBLOCKSECTOR
-            sta CYCLESTARTENDSECTOR
-            sta NEXTDIRBLOCKSECTOR
-            jsr busyledon; passes errorretlo, returns with carry set
-            lda DIRTRACKS,x
-            ldy DIRSECTORS,x
-
-            ; there should be a check for illegal track or sector
-            ; here - unfortunately, there is no memory left for it
+            ; matches against hash of filename in FILENAMEHASH0/1
+            FIND_FILE 1541
+            ; sets a to file track and y to file sector, sets carry flag
 
 .else; ::FILESYSTEM = FILESYSTEMS::TRACK_SECTOR && (!LOAD_ONCE)
 
@@ -382,7 +206,7 @@ scantrloop: lda #OPC_BIT_ZP; only fetch the first few bytes to track the block l
 
             plp; out-of-order flag
             ; read and transfer all the blocks that belong to the file
-            ; on the current track, the blocks are read in quasi-random order´
+            ; on the current track, the blocks are read in quasi-random order
             pha         ; next track
             tya         ; amount of the file's blocks on the current track
             pha
@@ -409,21 +233,8 @@ loadooo:    sty SECTORTOFETCH
             bcs :-           ; retry until a block has been successfully loaded
 
 transfer:   ; send the block over
-           ;ldx LOADEDSECTOR
-            ldy #SECTORISPROCESSED; $ff
-            sty TRACKLINKTAB,x; mark the loaded block as processed
-           ;ldy #$ff
-           ;lda LINKTRACK
-            tax
-            bne :+
-            ldy LINKSECTOR; the file's last block's length
-:           sty dsendcmp + $01
-            dey
-            dey
-            tya
-            ldy #$01
-            jsr gcrencode; block length
-            clc
+            jsr prepareblk
+           ;clc
             lda BLOCKINDEX
             adc BLOCKINDEXBASE
             jsr sendblock; send the block over, this decreases SECTORCOUNT
@@ -448,15 +259,7 @@ transfer:   ; send the block over
 
 .if (::FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME) && (!LOAD_ONCE)
 
-            ldx FILEINDEX
-            inx
-            lda DIRTRACKS,x
-            cpx WRAPFILEINDEX
-            beq :+
-            cpx NUMFILES
-            bcc :++
-:           lda #DIRTRACK
-:           jsr trackseek; move head to the start track of the next file in the directory
+            PREPARE_NEXT_FILE 1541
 
             clc; all ok after loading
 
@@ -465,7 +268,7 @@ filenotfnd: ; branches here with carry set
             clc; all ok after loading
 .endif
 
-illegalts:  ; file not found or illegal t or s
+illegalts:  ; carry set: file not found or illegal t or s
             jsr sendstatus
 
             ldy #$01; turn motor and busy led off
@@ -487,10 +290,16 @@ illegalts:  ; file not found or illegal t or s
             .res 64; prevent page-boundary crossing below
 .endif
 
+.if (::FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME) && (!LOAD_ONCE)
+
+            FNAMEHASH 1541
+
+.endif; ::FILESYSTEM = FILESYSTEMS::TRACK_SECTOR && (!LOAD_ONCE)
+
             ; carry: clear = ok, set = load error
 sendstatus: lda #$00
             sta SECTORCOUNT; make sure DATA OUT (track change) is not raised after transferring the status
-            sta dsendcmp + $01; just send over one byte
+            sta blocksize + $01; just send over one byte
             sbc #$01; carry clear: result is $00 - $02 = $fe - loading finished successfully
                     ; carry set:   result is $00 - $01 = $ff - load error
 
@@ -505,25 +314,25 @@ sendblock:  ldy #$00
                     ; still be busy decompressing a large chunk of data;
                     ; this is the round counter
             dey; ldy #$ff
-            lda #DATA_OUT
+            lda #DATA_OUT; drop CLK but leave DATA high as signal of presence
             sta VIA1_PRB; block ready signal
-            bne :+
+            bne :+; jmp
             ; a watchdog is used because the computer might be reset while sending
             ; over the block, leaving the drive waiting forever for handshake pulses
-waitready:  lda VIA2_T1C_H; see if the watchdog barked
+waitready:  lda WATCHDOG_TIMER; see if the watchdog barked
             bne :++
-            dex           ; if yes, decrease the round counter
+            dex               ; if yes, decrease the round counter
 .if DISABLE_WATCHDOG
             beq nowatchdog
 nowatchdog:
 .else
             beq timeout; and trigger watchdog on time-out
 .endif
-:           sty VIA2_T1C_H; reset watchdog time-out and clear IRQ flag
+:           sty WATCHDOG_TIMER; reset watchdog time-out and clear IRQ flag
 :           bit VIA1_PRB
             bpl waitready; wait for ATN = high
 
-            sty VIA2_T1C_H; reset watchdog time-out and clear possibly set IRQ flag
+            sty WATCHDOG_TIMER; reset watchdog time-out and clear possibly set IRQ flag
 
 timeout:    ENABLE_WATCHDOG
             iny; ldy #$00
@@ -554,9 +363,9 @@ sendloop:   ldx LONIBBLES,y               ; 4
                                           ; = 28
 
             lda #$e0 | DATA_OUT | DATA_IN ; 2
-dsendcmp:   cpy #$00                      ; 2
+blocksize:  cpy #$00                      ; 2
             sta VIA1_PRB                  ; 4
-            sta VIA2_T1C_H                ; 4 - reset watchdog time-out
+            sta WATCHDOG_TIMER            ; 4 - reset watchdog time-out
             bit VIA1_PRB                  ; 4
             bpl resend                    ; 2
             iny                           ; 2
@@ -581,7 +390,7 @@ sendloop:   ldx LONIBBLES,y               ; 4
             bpl :-                        ; 3
             sta VIA1_PRB                  ; 4
             lda SENDGCRTABLE,x            ; 4 - zp access
-            sta VIA2_T1C_H                ; 4 - reset watchdog time-out
+            sta WATCHDOG_TIMER            ; 4 - reset watchdog time-out
                                           ; = 19 (19 on computer)
 
 :           bit VIA1_PRB                  ; 4 - sync 2: wait for ATN low
@@ -589,7 +398,7 @@ sendloop:   ldx LONIBBLES,y               ; 4
             sta VIA1_PRB                  ; 4
             asl                           ; 2
             ora #ATNA_OUT                 ; 2 - next bit pair will be transferred with ATN high - if not set, host DATA IN will be low
-dsendcmp:   cpy #$00                      ; 2
+blocksize:  cpy #$00                      ; 2
             iny                           ; 2
                                           ; = 19 (19 on computer)
 
@@ -606,7 +415,7 @@ dsendcmp:   cpy #$00                      ; 2
 :           bit VIA1_PRB; wait for acknowledgement
             bmi :-      ; of the last data byte
 
-            ldy #CLK_OUT
+            ldy #CLK_OUT; not changing tracks
             dec SECTORCOUNT
             bne :+      ; pull DATA_OUT high when changing tracks
 drwaitrkch: ldy #CLK_OUT | DATA_OUT; flag track change
@@ -615,7 +424,9 @@ drwaitrkch: ldy #CLK_OUT | DATA_OUT; flag track change
             ; to loading out of order - switching back to loading in order will cause
             ; the stream code to hiccup and thus faulty file data to be loaded
             jmp drivebusy; will announce busy and track change flag, disable watchdog and perform rts
+.ifdef MODULE
 MODULEEND:
+.endif
 
 LOADFILE41END = *
 .export LOADFILE41END
