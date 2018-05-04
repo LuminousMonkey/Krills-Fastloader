@@ -20,6 +20,8 @@ endif
 endif
 
 
+TOP         ?= .
+
 SVNVERSION   = svnversion
 ifneq ($(wildcard ../../.svn/format),)
 VERSION      = $(shell $(SVNVERSION) | tr -d [:cntrl:])
@@ -50,18 +52,17 @@ EXO          = exomizer
 PERL         = perl
 ZIP          = zip -9
 
+INCDIR       = $(TOP)/../../shared
+LDRINC       = $(TOP)/../include
 
-INCDIR       = ../../shared
-LDRINC       = ../include
+DECOMPDIR    = $(TOP)/decompress
+DRIVESDIR    = $(TOP)/drives
+HALDIR       = $(TOP)/hal
+INSTALLDIR   = $(TOP)/install
+RESIDENTDIR  = $(TOP)/resident
 
-DECOMPDIR    = decompress
-DRIVESDIR    = drives
-HALDIR       = hal
-INSTALLDIR   = install
-RESIDENTDIR  = resident
-
-BUILDDIR     = ../build
-INTERMDIR    = ../build/interm
+BUILDDIR     = $(TOP)/../build
+INTERMDIR    = $(TOP)/../build/interm
 
 ifneq ($(EXTCONFIGPATH),)
 CONFIG       = $(EXTCONFIGPATH)/loaderconfig.inc
@@ -76,14 +77,14 @@ INSTALLDEPS  = $(CONFIG) $(BUILDDIR) $(INTERMDIR) \
                $(HALDIR)/hal.inc $(HALDIR)/hal-c64.inc $(HALDIR)/hal-c16.inc \
                $(INSTALLDIR)/install.s \
                $(LDRINC)/loader.inc $(LDRINC)/option-check.inc $(LDRINC)/common-features.inc $(LDRINC)/resident-jumptable.inc $(LDRINC)/install-jumptable.inc $(LDRINC)/diskio.inc \
-               ../version.inc Makefile
+               $(TOP)/../version.inc Makefile
 
 RESIDENTDEPS = $(CONFIG) $(BUILDDIR) $(INTERMDIR) \
                $(DECOMPDIR)/exodecomp.s $(DECOMPDIR)/pudecomp.s $(DECOMPDIR)/doynaxdecomp.s $(DECOMPDIR)/bbdecomp.s $(DECOMPDIR)/lcdecomp.s \
                $(HALDIR)/hal.inc $(HALDIR)/hal-c64.inc $(HALDIR)/hal-c16.inc \
                $(RESIDENTDIR)/resident.s $(RESIDENTDIR)/decompress.s \
                $(LDRINC)/loader.inc $(LDRINC)/option-check.inc $(LDRINC)/common-features.inc $(LDRINC)/resident-jumptable.inc $(LDRINC)/install-jumptable.inc $(LDRINC)/diskio.inc \
-               ../version.inc Makefile
+               $(TOP)/../version.inc Makefile
 
 BINDEPS      = $(BUILDDIR)/loadersymbols-$(_PLATFORM_).inc $(BUILDDIR)/loader-$(_PLATFORM_).prg $(CONFIG)
 
@@ -93,7 +94,7 @@ AS_FLAGS    += -t c16 -D PLATFORM=16
 else
 AS_FLAGS    += -t c64 -D PLATFORM=64
 endif
-AS_FLAGS    += -I . -I $(INCDIR) -I $(LDRINC)
+AS_FLAGS    += -I $(TOP)/. -I $(INCDIR) -I $(LDRINC)
 ifneq ($(EXTCONFIGPATH),)
 AS_FLAGS    += -D EXTCONFIGPATH -I $(EXTCONFIGPATH)
 endif
@@ -125,8 +126,8 @@ ifeq ($(VERSION),)
 	$(TOUCH) $@
 endif
 
-../version.inc: ../../.svn/entries
-	$(MAKE) -C .. version.inc
+$(TOP)/../version.inc: ../../.svn/entries
+	$(MAKE) -C $(TOP)/.. version.inc
 
 
 # directory targets
@@ -157,7 +158,7 @@ $(INTERMDIR)/install-$(_PLATFORM_).o: $(INSTALLDEPS)
  # 1541 kernel with loadfile module
  # this is mainly needed to resolve circular symbol dependencies between kernel and loadfile module
 $(INTERMDIR)/symbols1541-kernel-loadfile.inc: $(INTERMDIR)/drivecode1541-kernel-loadfile.prg.map
-	$(PERL) drives/make-kernelsymbolsinc.pl $^ > $@
+	$(PERL) $(TOP)/drives/make-kernelsymbolsinc.pl $^ > $@
 
 $(INTERMDIR)/drivecode1541-kernel-loadfile.link: Makefile
 	$(PRINTF) "MEMORY \n{\n DRIVERAM: start = \$$00, size = \$$0800, file = \"$(INTERMDIR)/drivecode1541-kernel-loadfile.prg\";\n}\n\nSEGMENTS\n{\n CODE: load = DRIVERAM;\n}" > $@
@@ -188,7 +189,7 @@ drivecode1541-kernel.prg: $(INTERMDIR)/drivecode1541-kernel.prg
 
  # 1541 loadfile module
 $(INTERMDIR)/kernelsymbols1541.inc: $(INTERMDIR)/drivecode1541-kernel.prg.map
-	$(PERL) drives/make-kernelsymbolsinc.pl $^ > $@
+	$(PERL) $(TOP)/drives/make-kernelsymbolsinc.pl $^ > $@
 
 $(INTERMDIR)/drivecode1541-loadfile.link: Makefile
 	$(PRINTF) "MEMORY \n{\n DRIVERAM: start = \$$00, size = \$$0800, file = \"../build/drivecode1541-loadfile.prg\";\n}\n\nSEGMENTS\n{\n CODE: load = DRIVERAM;\n}" > $@

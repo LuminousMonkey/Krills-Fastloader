@@ -46,7 +46,7 @@ lz_sector       = $0400                 ;The one-page buffer from which the
 ;the lz_sector_ptr1..3 pointers will need to be patched up
 ;-------------------------------------------------------------------------------
 lz_fetch_sector:
-		pha
+                pha
                 sty save_y+1
 
 .if BYTESTREAM

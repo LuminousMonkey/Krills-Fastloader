@@ -531,7 +531,7 @@ $(BUILDDIR)/loadertest-$(_PLATFORM_).d71: $(DISKIMAGEDEPS)
 # QD-PRLOGOHI.DNX   $2e/$05
 # CD-BOTHGFXHI.DNX  $2e/$0b
 
-$(BUILDDIR)/loadertest-$(_PLATFORM_).d81 $(BUILDDIR)/loadertest-$(_PLATFORM_).d82: $(DISKIMAGEDEPS) filler.prg
+$(BUILDDIR)/loadertest-$(_PLATFORM_).d81 $(BUILDDIR)/loadertest-$(_PLATFORM_).d82: $(DISKIMAGEDEPS)
 	$(C1541) -format "normal is boring,+h" $(subst .,,$(suffix $@)) $@
 	$(C1541) -attach $@ \
 	 -write $(INTERMDIR)/sheba.prg              "sb-sheba.bin" \

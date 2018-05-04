@@ -162,7 +162,7 @@ getdirloop:
             cpx #DIRBUFFSIZE - 1
     .if (.not .xmatch (drivetype, 1581))
             lda CURRDIRBLOCKSECTOR
-    .endif; 1581
+    .endif; not 1581
             bcs dirbuffull
             
             ; when starting to cycle through the directory, the files in
@@ -226,7 +226,14 @@ samedisk:
     .endif; !1581
             ldx NUMFILES
 nextfile:   dex
+    .if (.xmatch (drivetype, 1581))
+            .assert DIRBUFFSIZE > $80, error, "***** Missed optimization opportunity. *****"
+            cpx #$ff; DIRBUFFSIZE is bigger than $80
+            bne findfile; check all dir entries in the buffer
+    .else
+            .assert DIRBUFFSIZE <= $80, error, "***** Invalid optimization. *****"
             bpl findfile; check all dir entries in the buffer
+    .endif
 
             ; the dir buffer does not contain the file,
             ; so cycle through the directory to find it

@@ -412,7 +412,7 @@ blocksize:  cpy #$00                      ; 2
 
             .assert .hibyte(* + 1) = .hibyte(sendloop), error, "***** Page boundary crossing in byte send loop, fatal cycle loss. *****"
 
-:           bit VIA1_PRB; wait for acknowledgement
+:           bit VIA1_PRB; wait for ATN lo, acknowledgement
             bmi :-      ; of the last data byte
 
             ldy #CLK_OUT; not changing tracks

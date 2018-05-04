@@ -783,8 +783,8 @@ getblnofbk:
             bcc returnok
 .endif; !(OPEN_FILE_POLL_BLOCK_API | NONBLOCKING_API)
 
-			; translate getblock error code to diskio::status,
-			; always returns with carry set to satisfy pollblock return semantics,
+            ; translate getblock error code to diskio::status,
+            ; always returns with carry set to satisfy pollblock return semantics,
             ; accu argument is DEVICE_NOT_PRESENT ($00 or $01),
             ; LOAD_FINISHED ($fe, file loaded successfully),
             ; or LOAD_ERROR ($ff, file not found or illegal t or s)
@@ -824,6 +824,7 @@ getblock:  ;clc
             END_SEND_BLOCK_SIGNAL
 
             jsr get1byte; get block index or error/eof code
+            
 .if GETBYTE_SETS_VALUE_FLAGS = 0
             tax; z flag: set if first block
 .endif
@@ -861,7 +862,6 @@ DEBUG_BLOCKLOAD = 0
 storeladrl: sta loadaddrlo; is changed to lda on load_to
             sta BLOCKDESTLO
             jsr get1byte; load address hi
-
 .if DEBUG_BLOCKLOAD
             ldx #$02
             jsr PRINTHEX
@@ -996,9 +996,9 @@ gotblock:
 .if DEBUG_BLOCKLOAD
             sec
     .if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
-            lda #diskio::status::INTERNAL_ERROR - diskio::status::DEVICE_NOT_PRESENT
+            lda #.lobyte(diskio::status::INTERNAL_ERROR - diskio::status::DEVICE_NOT_PRESENT)
     .else
-            lda #diskio::status::INTERNAL_ERROR - diskio::status::DEVICE_NOT_PRESENT + 1
+            lda #.lobyte(diskio::status::INTERNAL_ERROR - diskio::status::DEVICE_NOT_PRESENT + 1)
     .endif
             ldy BLOCKINDEX
 .else; !DEBUG_BLOCKLOAD
@@ -1006,7 +1006,7 @@ gotblock:
 .endif; !DEBUG_BLOCKLOAD
 
 polldone:   ENDGETBLOCK; restore clock configuration
-            rts
+postpoll:   rts
 
 .if INSTALL_FROM_DISK | (FILESYSTEM <> FILESYSTEMS::DIRECTORY_NAME)
 sendbyte:   SENDBYTE
@@ -1139,6 +1139,9 @@ kernalerr:  pha; KERNAL status byte
 kernaloff:  lda #$00
             SET_MEMCONFIG
             pla; KERNAL status byte
+.if PLATFORM = diskio::platform::COMMODORE_16
+            sta STATUS; the CLRCHN call above sets STATUS ($90) to KERNAL_STATUS_ILLEGAL_TRACK_OR_SECTOR ($c0)
+.endif
             cmp #KERNAL_STATUS_EOF
             bne kernaloerr
             ; EOF

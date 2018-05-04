@@ -383,6 +383,7 @@ storebytio:  sta a:$00,y
     .if PROTOCOL = PROTOCOLS::TWO_BITS_RESEND
             lda #CLOCK_ATN_LO
             sta IO_PORT
+            jsr postpoll; need a bit more delay until the drive is ready
     .endif
             txa; special block number (irrelevant for regular blocks)
 .endmacro

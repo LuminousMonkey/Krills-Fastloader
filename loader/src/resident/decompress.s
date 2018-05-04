@@ -11,11 +11,11 @@
         .if GETCHUNK_API
             lda CHUNKSWTCH
             bne begindecomp; branch if GETCHUNK_API routines are switched off
-			tsx
-			stx LASTSP; exception stack pointer
+            tsx
+            stx LASTSP; exception stack pointer
             lda LASTPC + $01
             beq begindecomp; branch if file's first call to getchunk
-			; go back to decompressor context
+            ; go back to decompressor context
             lda CHUNKENDLO
             cmp chunkdestlo
             lda CHUNKENDHI
@@ -79,7 +79,7 @@ notcomplet:
     .macro CHUNKSUB
         .if GETCHUNK_API
 chunkout:   CHUNKBACKUP
-			; switch to getchunk context
+            ; switch to getchunk context
             clc
             pla
             adc #$01

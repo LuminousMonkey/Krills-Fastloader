@@ -220,11 +220,11 @@ IMPORT loadraw
     .endmacro
 
     .if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
-	.macro LOADNEXTRAW
-	        lda #$00
-			LOADRAW #.lobyte(* - 1), #.hibyte(* - 1)
-	.endmacro
-	.endif
+        .macro LOADNEXTRAW
+            lda #$00
+            LOADRAW #.lobyte(* - 1), #.hibyte(* - 1)
+        .endmacro
+    .endif
 
     .if LOAD_TO_API
         .macro LOADRAW_LOADTO namelo_or_track, namehi_or_sector, dest_lo, dest_hi
@@ -238,12 +238,12 @@ IMPORT loadraw
             jsr loadraw
         .endmacro
 		
-    .if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
-	.macro LOADNEXTRAW_LOADTO dest_lo, dest_hi
-	        lda #$00
-			LOADRAW_LOADTO #.lobyte(* - 1), #.hibyte(* - 1), dest_lo, dest_hi
-	.endmacro
-	.endif
+        .if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
+            .macro LOADNEXTRAW_LOADTO dest_lo, dest_hi
+                lda #$00
+                LOADRAW_LOADTO #.lobyte(* - 1), #.hibyte(* - 1), dest_lo, dest_hi
+            .endmacro
+        .endif
     .endif;  LOAD_TO_API
 .else; LOAD_ONCE
     .macro LOADRAW
@@ -286,8 +286,8 @@ IMPORT loadcompd
 
     .if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
 	.macro LOADNEXTCOMPD
-	        lda #$00
-			LOADCOMPD #.lobyte(* - 1), #.hibyte(* - 1)
+            lda #$00
+            LOADCOMPD #.lobyte(* - 1), #.hibyte(* - 1)
 	.endmacro
 	.endif
 .else; LOAD_ONCE
@@ -318,11 +318,11 @@ IMPORT loadrawnb
     .endmacro
 
     .if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
-	.macro LOADNEXTRAW_NB
-	        lda #$00
-			LOADRAW_NB #.lobyte(* - 1), #.hibyte(* - 1)
-	.endmacro
-	.endif
+        .macro LOADNEXTRAW_NB
+            lda #$00
+            LOADRAW_NB #.lobyte(* - 1), #.hibyte(* - 1)
+        .endmacro
+    .endif
 
     .if LOAD_TO_API
         .macro LOADRAW_LOADTO_NB namelo_or_track, namehi_or_sector, dest_lo, dest_hi
@@ -338,10 +338,10 @@ IMPORT loadrawnb
 
         .if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
         .macro LOADNEXTRAW_LOADTO dest_lo, dest_hi
-	        lda #$00
-			LOADRAW_LOADTO #.lobyte(* - 1), #.hibyte(* - 1), dest_lo, dest_hi
-	    .endmacro
-	    .endif
+            lda #$00
+            LOADRAW_LOADTO #.lobyte(* - 1), #.hibyte(* - 1), dest_lo, dest_hi
+        .endmacro
+        .endif
     .endif;  LOAD_TO_API
 .else; LOAD_ONCE
     .macro LOADRAW_NB
@@ -402,8 +402,8 @@ IMPORT openfile
 
     .if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
 	.macro OPENNEXTFILE
-	        lda #$00
-			OPENFILE #.lobyte(* - 1), #.hibyte(* - 1)
+            lda #$00
+            OPENFILE #.lobyte(* - 1), #.hibyte(* - 1)
 	.endmacro
 	.endif
 
@@ -421,8 +421,8 @@ IMPORT openfile
 		
         .if FILESYSTEM = FILESYSTEMS::DIRECTORY_NAME
 	    .macro OPENNEXTFILE_LOADTO dest_lo, dest_hi
-	        lda #$00
-			OPENFILE_LOADTO #.lobyte(* - 1), #.hibyte(* - 1), dest_lo, dest_hi
+            lda #$00
+            OPENFILE_LOADTO #.lobyte(* - 1), #.hibyte(* - 1), dest_lo, dest_hi
 	    .endmacro
 	    .endif
     .endif; LOAD_TO_API
