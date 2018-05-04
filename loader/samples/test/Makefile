@@ -158,7 +158,7 @@ CC1541         = ../../tools/cc1541
 EXO            = exomizer
 PU             = pucrunch
 BB             = BB
-DOYNAX_LZ      = ../../tools/doynax_lz
+DOYNAX_LZ      = lz # aka Doynamite
 
 # CRUSH.EXE is a DOS program to which no source has been published
 ifneq ($(findstring WIN,$(ARCH)),)
@@ -237,7 +237,7 @@ MODULE1541DEPS = $(SHAREDDEPS) \
                  $(LOADER)/drives/drivecode1541-kernel.inc $(LOADER)/drives/drivecode1541.s $(LOADER)/drives/drivecode1541-loadfile.s \
                  $(INTERMDIR)/kernelsymbols1541.inc
 
-DISKIMAGEDEPS  = Makefile $(CC1541) $(DOYNAX_LZ) \
+DISKIMAGEDEPS  = Makefile $(CC1541) \
                  $(INTERMDIR)/test-$(_PLATFORM_).prg $(LDRBIN)/loader-$(_PLATFORM_).so \
                  $(INTERMDIR)/sheba.prg   $(INTERMDIR)/prlogo.prg \
 				 $(INTERMDIR)/shebahi.prg $(INTERMDIR)/prlogohi.prg \
@@ -701,13 +701,9 @@ clean:
 distclean:
 	$(MAKE) -C $(LOADER) clean
 	$(MAKE) -C $(CC1541)_source clean
-	$(MAKE) -C $(DOYNAX_LZ)_source clean
 
 wipe: distclean clean
 
 
 $(CC1541): $(CC1541)_source/cc1541.cpp
 	$(MAKE) -C $(CC1541)_source
-
-$(DOYNAX_LZ): $(DOYNAX_LZ)_source/lz.c
-	$(MAKE) -C $(DOYNAX_LZ)_source

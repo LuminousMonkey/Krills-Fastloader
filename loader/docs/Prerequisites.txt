@@ -30,9 +30,10 @@ zip                                                              <zippath>      
 Path, compressed files:
 Name               Source                                        Path setting
 
-bb (ByteBoozer)    http://noname.c64.org/csdb/release/?id=33093  <bbpath>
-pucrunch           http://www.cs.tut.fi/~albert/Dev/pucrunch/    <pupath>        (build from source, binaries are outdated)
 exomizer           http://hem.bredband.net/magli143/exo/         <exopath>
+pucrunch           http://www.cs.tut.fi/~albert/Dev/pucrunch/    <pupath>        (build from source, binaries are outdated)
+doynamite          http://csdb.dk/release/?id=118678             <doynamitepath>
+bb (ByteBoozer)    http://csdb.dk/release/?id=33093              <bbpath>
 
 java               http://java.com/                              <javapath>/bin  (needed to run the compressed file converter for Doynax-LZ, Byteboozer and Taboo Levelcrush)
 javac              http://java.com/                              <javapath>/bin  (needed to build the compressed file converter for Doynax-LZ, Byteboozer and Taboo Levelcrush)
@@ -41,10 +42,10 @@ dosbox             http://wwww.dosbox.com/                       <dosboxpath>   
 wine               http://www.winehq.org/                        <winepath>      (needed on non-Windows and non-MAC OS X systems to run tools/CRUSH.exe to compress files for Taboo Levelcrush)
 
 
-Path, test tool:
+Path, samples folder:
 Name               Source                                        Path setting
 
-c1541              http://vice-emu.sourceforge.net/              <vicepath>      (only needed for 1581 disk image targets)
+c1541              http://vice-emu.sourceforge.net/              <vicepath>
 vice               http://vice-emu.sourceforge.net/              <vicepath>
 plus4emu           http://plus4emu.sourceforge.net/              <plus4emupath>  (only needed if using the NO_VICE=1 make run switch on Plus/4 and MAC OS X)
 yape               http://yape.homeserver.hu/                    <yapepath>      (only needed if using the NO_VICE=1 make run switch on Plus/4 and Windows)

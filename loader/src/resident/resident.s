@@ -460,9 +460,7 @@ openfile:
     .else
             lda #OPC_STA_ZP
     .endif
-    .if DECOMPRESSOR <> DECOMPRESSORS::DOYNAX_LZ; destination lo-byte cannot be overridden
             sta storedadrl
-    .endif
             sta storedadrh
 .endif
 
@@ -1488,10 +1486,7 @@ domemdecomp:
         .endif
             bcc :+
             lda #OPC_LDA_ZP
-:           
-        .if DECOMPRESSOR <> DECOMPRESSORS::DOYNAX_LZ; destination lo-byte cannot be overridden
-            sta storedadrl
-        .endif
+:           sta storedadrl
             sta storedadrh
     .endif
 

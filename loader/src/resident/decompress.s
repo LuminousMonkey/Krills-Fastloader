@@ -52,8 +52,8 @@ nochunksetup:
     .endmacro
 
     .macro CHUNKCHECK; this macro must only be used in decompress stack pointer context,
-	                 ; with no data or return addresses internal to decompress on the
-	                 ; stack, so that an rts would return to the caller of decompress
+                     ; with no data or return addresses internal to decompress on the
+                     ; stack, so that an rts would return to the caller of decompress
         .if GETCHUNK_API
             .local notcomplet
 

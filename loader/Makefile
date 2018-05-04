@@ -44,11 +44,11 @@ ZIPLIST           += $(SHAREDFOLDER)/float.inc
 ZIPLIST           += $(LOADERFOLDER)/Makefile
 ZIPLIST           += $(LOADERFOLDER)/version.inc
 
-ZIPLIST           += $(DOCSFOLDER)/Prerequisites.txt
-ZIPLIST           += $(DOCSFOLDER)/FastFileFormat.txt
-ZIPLIST           += $(DOCSFOLDER)/Protocols.txt
-ZIPLIST           += $(DOCSFOLDER)/GCRTiming.txt
 ZIPLIST           += $(DOCSFOLDER)/FilenameHashFunction.txt
+ZIPLIST           += $(DOCSFOLDER)/GCRTiming.txt
+ZIPLIST           += $(DOCSFOLDER)/Prerequisites.txt
+ZIPLIST           += $(DOCSFOLDER)/Protocols.txt
+ZIPLIST           += $(DOCSFOLDER)/Thanks.txt
 ZIPLIST           += $(DOCSFOLDER)/Usage.txt
 
 DECOMPFOLDER       = decompress
@@ -107,7 +107,6 @@ ZIPLIST           += $(SAMPLESFOLDER)/$(TURNDISKFOLDER)/turndisk.s
 ZIPLIST           += $(SAMPLESFOLDER)/$(TURNDISKFOLDER)/loaderconfig.inc
 
 CC1541SRCFOLDER    = cc1541_source
-DOYNAXLZSRCFOLDER  = doynax_lz_source
 ZIPLIST           += $(TOOLSFOLDER)/CompressedFileConverter.java
 ZIPLIST           += $(TOOLSFOLDER)/CompressedFileConverter.class
 ZIPLIST           += $(TOOLSFOLDER)/CRUSH.EXE
@@ -117,10 +116,6 @@ ZIPLIST           += $(TOOLSFOLDER)/$(CC1541SRCFOLDER)/cc1541.cpp
 ZIPLIST           += $(TOOLSFOLDER)/$(CC1541SRCFOLDER)/filefinder.cpp
 ZIPLIST           += $(TOOLSFOLDER)/$(CC1541SRCFOLDER)/XGetOpt.cpp
 ZIPLIST           += $(TOOLSFOLDER)/$(CC1541SRCFOLDER)/XGetOpt.h
-ZIPLIST           += $(TOOLSFOLDER)/$(DOYNAXLZSRCFOLDER)/Makefile
-ZIPLIST           += $(TOOLSFOLDER)/$(DOYNAXLZSRCFOLDER)/lz.c
-ZIPLIST           += $(TOOLSFOLDER)/$(DOYNAXLZSRCFOLDER)/unlzip.c
-ZIPLIST           += $(TOOLSFOLDER)/$(DOYNAXLZSRCFOLDER)/decrunch.asm
 
 DISKIMAGES         = $(BUILDFOLDER)/loadertest-c64.d64
 DISKIMAGES        += $(BUILDFOLDER)/loadertest-c64.d71

@@ -50,7 +50,7 @@ _LOADER_INC_ = 1
 
     EXOMIZER        ; Magnus Lind's Exomizer
     PUCRUNCH        ; Pasi Ojala's Pucrunch
-    DOYNAX_LZ       ; Doynax LZ
+    DOYNAX_LZ       ; Doynax LZ, aka Doynamite
     BYTEBOOZER      ; HCL/Booze Design's ByteBoozer
     LEVELCRUSH      ; Taboo Levelcrush
 

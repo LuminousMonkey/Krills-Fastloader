@@ -4,128 +4,68 @@
                 sty toloadbt + $02
 .endmacro
 
-lz_dst          = decdestlo             ;; destination pointer. initialize
-lz_dst_lo       = lz_dst + $00          ;; this to whatever address you want
-lz_dst_hi       = lz_dst + $01          ;; to decompress to
-                                        ;;
-lz_bits         = DECOMPVARS + $00      ;; shift register. initialized to $80
-                                        ;;
-lz_scratch      = DECOMPVARS + $01      ;; temporary zeropage storage. doesn't
-                                        ;; need to be preserved between calls
-                                        ;;
-lz_sector       = $0400                 ;; the one-page buffer from which the
-                                        ;; compressed data is actually read,
-                                        ;; and which is refilled by
-                                        ;; lz_fetch_sector
+;-------------------------------------------------------------------------------
+;Regular version of the Lempel-Ziv decompressor
+;-------------------------------------------------------------------------------
+lz_dst          = decdestlo             ;Decompression destination pointer.
+                                        ;Initialize this to whatever address
+                                        ;you want to decompress to
+
+lz_bits         = DECOMPVARS + $00      ;Shift register. Initialized to $80
+                                        ;for a new file
+
+lz_scratch      = DECOMPVARS + $01      ;Temporary zeropage storage
+
+lz_sector       = $0400                 ;The one-page buffer from which the
+                                        ;compressed data is actually read,
+                                        ;and which gets refilled by
+                                        ;lz_fetch_sector.
 
 .ifndef DYNLINK_EXPORT
-	.if GETC_API
+    .if GETC_API
                 .assert .lobyte(getcmem) <> .lobyte(getcmemfin), error, "Error: Invalid code optimization"
                 .assert .lobyte(getcmem) <> .lobyte(getcmemeof), error, "Error: Invalid code optimization"
-	.endif; GETC_API
-	.if BYTESTREAM
-		.if LOAD_VIA_KERNAL_FALLBACK
+    .endif; GETC_API
+    .if BYTESTREAM
+        .if LOAD_VIA_KERNAL_FALLBACK
                 .assert .lobyte(getcmem) <> .lobyte(getckernal), error, "Error: Invalid code optimization"
-		.endif; LOAD_VIA_KERNAL_FALLBACK
+        .endif; LOAD_VIA_KERNAL_FALLBACK
                 .assert .lobyte(getcmem) <> .lobyte(getcload),   error, "Error: Invalid code optimization"
-	.endif; BYTESTREAM
+    .endif; BYTESTREAM
 .endif; !DYNLINK_EXPORT
 
-decompress:     CHUNKENTRY
-				jsr toloadbt
-                sta lz_dst_lo; destination lo-byte cannot be overridden
-                jsr toloadbt
-storedadrh:     sta lz_dst_hi
-                CHUNKSETUP
-                jsr lz_fetch_sector
-                dex
-				lda #$80
-                sta lz_bits
-				SKIPWORD
-decomppage:     inc lz_dst_hi
-				CHUNKCHECK
-				jsr lz_decrunch
-.if BYTESTREAM
-				php
-                jsr maybegetblock
-				plp
-.endif; BYTESTREAM
-                bcs decomppage
 
-				; housekeeping to finish decompression
-.if BYTESTREAM
-	.if LOAD_VIA_KERNAL_FALLBACK
-				lda toloadbt + $01
-                cmp #.lobyte(getckernal)
-                beq decompfinished
-	.endif; LOAD_VIA_KERNAL_FALLBACK
-                stx YPNTRBUF
-.endif; BYTESTREAM
-                stx getcmemadr + $01
-                dec getcmemadr + $02
-                ; move pointer beyond last data byte
-				jsr toloadbt
-.if GETC_API
-                lda getcmemadr + $01
-                sta getcmemfin + $01
-                lda getcmemadr + $02
-				sta getcmemfin + $02
-.endif; GETC_API
-
-				; decompression finished
-decompfinished:	CHUNKEOF
-				rts
-
-toloadbt:       jmp getcmem
-
-.if BYTESTREAM
-maybegetblock:  lda toloadbt + $01
-                eor #.lobyte(getcload)
-                beq dogetblock
-				rts
-dogetblock:
-	.if LOAD_UNDER_D000_DFFF & (PLATFORM <> diskio::platform::COMMODORE_16)
-				ENABLE_IO_SPACE_Y
-	.endif; LOAD_UNDER_D000_DFFF & (PLATFORM <> diskio::platform::COMMODORE_16)
-                BRANCH_IF_BLOCK_NOT_READY :++
-                jsr getnewblk
-                lda toloadbt + $01
-                cmp #.lobyte(getcmem)
-                bne :+
-                jsr getcmem
-:				rts
-:				clc
-				jmp loadbytret
-.endif; BYTESTREAM
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; this is the user's hook to replentish the sector buffer with some new
-;; bytes.
-;; a and y are expected to be preserved. on exit carry must be set and x
-;; should point to the first byte of the new data, e.g. zero for a full
-;; 256-byte page of data or two to skip past the sector and track links
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-lz_fetch_sector:pha
+;-------------------------------------------------------------------------------
+;This is the user's hook to replenish the sector buffer with some new bytes.
+;
+;A and Y are expected to be preserved while carry must remain set on exit.
+;X should point to the first byte of the new data, e.g. zero for a full 256-byte
+;page of data or two to skip past the sector and track links.
+;
+;When fetching from a larger in-memory array rather than a single sector buffer
+;the lz_sector_ptr1..3 pointers will need to be patched up
+;-------------------------------------------------------------------------------
+lz_fetch_sector:
+		pha
                 sty save_y+1
 
-                ;; now do whatever it is you have to do to load the next
-                ;; sector..
 .if BYTESTREAM
                 lda toloadbt + $01
                 cmp #.lobyte(getcload)
                 beq isloading
-	.if LOAD_VIA_KERNAL_FALLBACK
+
+    .if LOAD_VIA_KERNAL_FALLBACK
                 cmp #.lobyte(getcmem)
                 beq getblkfrommem
-				jsr getckernal
-				sta onebytebuffer
-				lda #.lobyte(onebytebuffer - $ff)
-				ldy #.hibyte(onebytebuffer - $ff)
-				ldx #$ff
-				bne setblockpntrs
+                jsr getckernal
+                sta onebytebuffer
+                lda #.lobyte(onebytebuffer - $ff)
+                ldy #.hibyte(onebytebuffer - $ff)
+                ldx #$ff
+                bne setblockpntrs; jmp
+
 onebytebuffer:  .byte $00
-	.endif; LOAD_VIA_KERNAL_FALLBACK
+    .endif; LOAD_VIA_KERNAL_FALLBACK
 .endif; BYTESTREAM
 
 getblkfrommem:  ldx getcmemadr + $01
@@ -138,6 +78,11 @@ getblkfrommem:  ldx getcmemadr + $01
                 bne setblockpntrs; jmp
 
 isloading:      jsr maybegetblock
+		CHUNKCHECK
+                lda toloadbt + $01
+                cmp #.lobyte(getcload)
+                bne getblkfrommem
+
                 ldx YPNTRBUF
                 inx
                 bne :+; branch if first block
@@ -150,257 +95,312 @@ isloading:      jsr maybegetblock
 updateblkpntrs: lda getdbyte + $01
                 ldy getdbyte + $02
 .endif; BYTESTREAM
-setblockpntrs:  sta lz_sector0 + $00
-                sta lz_sector1 + $00
-                sta lz_sector2 + $00
-                sty lz_sector0 + $01
-                sty lz_sector1 + $01
-                sty lz_sector2 + $01
+
+setblockpntrs:  sta lz_sector_ptr1 + $00
+                sta lz_sector_ptr2 + $00
+                sta lz_sector_ptr3 + $00
+                sty lz_sector_ptr1 + $01
+                sty lz_sector_ptr2 + $01
+                sty lz_sector_ptr3 + $01
 
 save_y:         ldy #$00
                 pla
                 sec
                 rts
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; streaming lempel-ziv decompressor.
-;;
-;; the decoder renders one page of output per call, and potentially even
-;; writes parts of the subsequent page. it's entirely up to the caller to
-;; advance the lz_dst_hi (or not). carry will be cleared on exit when we've
-;; reached to end of the file.
-;;
-;; on entry and exit the x register points to the last byte read from the
-;; sector buffer, in ascending order from $00 to $ff. meaning that on init
-;; x should be $ff if the first sector has yet to be transferred and
-;; lz_fetch_sector should be called first-off. similarly the shift register
-;; should initially be emptied by setting lz_bits to #$80.
-;;
-;; the point of this scheme is that several compressed blocks or other data
-;; can be packed end-to-end instead of requiring things to be aligned on
-;; sector boundaries
-;;
-;; finally there's a crude but effective way to use sliding-windows.
-;; recall that the caller is responsible for advancing the destination pointer,
-;; and thus also needs wrap it when necessary. furthermore the compressor has
-;; to be told of a limited window-size so it doesn't try to use matches beyond
-;; it or, and this is an important point, matches spanning the window boundary.
-;;
-;; then the one thing that's left for the decruncher to do is to wrap
-;; backwards references when subtracting the offset from the current output
-;; position. the easiest way to achieve this is to make the window a nice even
-;; power-of-two and place it on a an odd address, then fix up the high-byte
-;; with a single ORA. in other words ORA #$10 would work for a 4k window
-;; placed at $1000/$3000/$5000/$7000/$9000/$a000/$f000.
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-
-                ;;;;;;;; fetch some more bits to work with ;;;;;;;;
-
-        :       jsr lz_fetch_sector
-                .byte $a0               ;; ldy #$e8
-refill_bits:    inx
-                beq :-
-lz_sector0 = *+1
-                ldy lz_sector,x
-                sty lz_bits
-        ;;      sec
-                rol lz_bits
-upper_rts:      rts
-
-
-                ;;;;;;;; finish processing a literal run ;;;;;;;;
-
-        :       jsr lz_fetch_sector
-                .byte $a9               ;; lda #$e8
-lcopy:          inx
-                beq :-
-lz_sector1 = *+1
-                lda lz_sector,x
-                dey
-                sta (lz_dst),y
-                bne lcopy
-
-                lda lz_scratch          ;; advance destination pointer
-                clc
-                adc lz_dst_lo
-                sta lz_dst_lo
-                bcs upper_rts
-                
 .if BYTESTREAM
-                jsr maybegetblock
+maybegetblock:  lda toloadbt + $01
+                eor #.lobyte(getcload)
+                beq dogetblock
+                rts
+dogetblock:
+    .if LOAD_UNDER_D000_DFFF & (PLATFORM <> diskio::platform::COMMODORE_16)
+                ENABLE_IO_SPACE_Y
+    .endif; LOAD_UNDER_D000_DFFF & (PLATFORM <> diskio::platform::COMMODORE_16)
+                BRANCH_IF_BLOCK_NOT_READY :++
+                jsr getnewblk
+                lda toloadbt + $01
+                cmp #.lobyte(getcmem)
+                bne :+
+                jsr getcmem
+:               rts
+:               clc
+                jmp loadbytret
 .endif; BYTESTREAM
 
-                ;; one literal run following another only makes sense if the
-                ;; first run is of maximum length and had to be split. yet any
-                ;; 256-byte must by definition cross the page, so here we can
-                ;; safely omit the type bit
+toloadbt:       jmp getcmem
 
 
-                ;;;;;;;; process match ;;;;;;;;
+decompress:     CHUNKENTRY
+                jsr toloadbt
+storedadrl:     sta lz_dst + $00
+                jsr toloadbt
+storedadrh:     sta lz_dst + $01
+                CHUNKSETUP
+                jsr lz_fetch_sector
+                ; fall through
 
-do_match:       lda #%00100000          ;; determine offset length by a
-        :       asl lz_bits             ;; two-bit prefix combined with the
-                bne :+                  ;; first run length bit (where a one
-                jsr refill_bits         ;; identifies two-byte match).
-        :       rol                     ;; the rest of the length bits will
-                bcc :--                 ;; then follow *after* the offset data
+;-------------------------------------------------------------------------------
+;This is the main lz_decrunch function which may be called to decompress an
+;entire file.
+;
+;On entry and exit the X register points to the next available byte in the
+;sector buffer, in ascending order from $00 to $ff.
+;This implies that the initial sector must have already been fetched, and that a
+;file ending with X wrapped to $00 will have needlessly fetched an extra sector
+;(which may be taken advantage of when decoding a contiguous set of files.)
+;-------------------------------------------------------------------------------
 
-                tay
-                lda moff_length,y
-                beq moff_far
+		;******** Start the next match/literal run ********
 
-moff_loop:      asl lz_bits             ;; load partial offset byte
-                bne :+
-                sty lz_scratch
-                jsr refill_bits
-                ldy lz_scratch
-        :       rol
-                bcc moff_loop
+lz_decrunch:	sec			;This is the main entry point. Forcibly
+_lz_type_refill:
+		jsr _lz_refill_bits	;fill up the the bit buffer on entry
+		bne _lz_type_cont	;(BRA)
 
-                bmi moff_near
+_lz_lcopy_fetch:
+		jsr lz_fetch_sector	;Grab a new sector for the literal loop
+		bcs _lz_lcopy_cont	;(BRA)
 
-moff_far:       sta lz_scratch          ;; save the bits we just read as the
-                                        ;; high-byte
-
-                inx                     ;; for large offsets we can load the
-                bne :+                  ;; low-byte straight from the stream
-                jsr lz_fetch_sector     ;; without going throught the shift
-lz_sector2 = *+1
-        :       lda lz_sector,x         ;; register
-
-         ;;     sec
-                adc moff_adjust_lo,y
-                bcs :+
-                dec lz_scratch
-                sec
-        :       adc lz_dst_lo
-                sta match_lo
-
-                lda lz_scratch
-                adc moff_adjust_hi,y
-                sec
-                jmp moff_join
-
-        ;;      sec
-moff_near:      adc moff_adjust_lo,y
-        ;;      sec
-                adc lz_dst_lo
-                sta match_lo
-                lda #$ff                ;;    ____
-moff_join:      adc lz_dst_hi           ;;   /   /
-                                        ;;  /   /___
-;; lz_window    = *+1                   ;; /        | insert sliding-window
-;;              ora #$00                ;; \    ____| wrapping code here
-                                        ;;  \   \ 
-                sta match_hi            ;;   \___\ 
-
-                cpy #$04                ;; get any remaning run length bits
-                lda #$01
-                bne mrun_enter          ;; (bra)
-
-        :       jsr refill_bits
-mrun_enter:     bcs mrun_gotten
-mrun_loop:      asl lz_bits
-                bne :+
-                jsr refill_bits
-        :       rol
-                asl lz_bits
-                bcc mrun_loop
-                beq :--
-
-mrun_gotten:    tay                     ;; a 257-byte (=>$00) run serves as
-                beq end_of_file         ;; a sentinel
-
-                sta mcopy_len
-
-                ldy #$ff                ;; copy loop. this needs to be run
-mcopy:          iny                     ;; forwards since RLE-style matches
-match_lo        = *+1                   ;; can overlap the destination
-match_hi        = *+2
-                lda $ffff,y
-                sta (lz_dst),y
-mcopy_len       = *+1
-                cpy #$ff
-                bne mcopy
-
-                tya                     ;; advance destination pointer
-        ;;      sec
-                adc lz_dst_lo
-                sta lz_dst_lo
-                bcs lower_rts
+		;Wrap the high-byte of the destination pointer.
+_lz_mfinish:	bcc *+4
+_lz_maximum:	inc lz_dst+1		;This is also used by maximum length
+					;literals needing an explicit type bit
 
 .if BYTESTREAM
                 jsr maybegetblock
 .endif; BYTESTREAM
+		CHUNKCHECK
 
-lz_decrunch:    asl lz_bits             ;; literal or match to follow?
-                bcs :++
-        :       jmp do_match
-typeof_refill:  jsr refill_bits
-                bcc :-
-        :       beq typeof_refill
-
-
-                ;;;;;;;; process literal run ;;;;;;;;
-
-do_literal:     lda #%00000001          ;; decode run length
-                bne lrun_enter          ;; (bra)
-
-        :       jsr refill_bits
-                bcs lrun_gotten
-lrun_loop:      asl lz_bits
-                bne :+
-                jsr refill_bits
-        :       rol
-lrun_enter:     asl lz_bits
-                bcc lrun_loop
-                beq :--
-
-lrun_gotten:    sta lz_scratch
-                tay
-                jmp lcopy
+		;Literal or match to follow?
+		asl lz_bits
+_lz_type_cont:	bcc _lz_do_match
+		beq lz_decrunch
 
 
-                ;;;;;;;; offset coding tables ;;;;;;;;
+		;******** Process literal run ********
 
-                ;; this length table is a bit funky. the idea here is to use
-                ;; the value as an initial shifter register instead of keeping
-                ;; a separate counter. in other words we iterate until the
-                ;; leading one is shifter out. then afterwards the bit just
-                ;; below it (our new sign bit) is set if the offset is shorter
-                ;; than 8-bits, and conversely it's cleared if we need to
-                ;; fetch a separate low-byte as well.
-                ;; the fact that the sign bit is cleared as a flag is
-                ;; compensated for in the off_adjust_hi table.
+		lda #%00000000		;Decode run length
+_lz_lrun_loop:	rol
+		asl lz_bits
+		bcs _lz_lrun_test
+_lz_lrun_back:	asl lz_bits
+		bne _lz_lrun_loop
 
-moff_length:    .byte %00011111         ;; 4  -.
-                .byte %00000111         ;; 6   |_ long (>2 byte matches)
-                .byte %10111111         ;; 9   |
-                .byte %00010111         ;; 12 -'
+		jsr _lz_refill_bits
+		bne _lz_lrun_loop	;(BRA)
 
-                .byte %00111111         ;; 3  -.
-                .byte %00000111         ;; 6   |_ short (2 byte matches)
-                .byte %00000000         ;; 8   |
-                .byte %01011111         ;; 10 -'
+_lz_lrun_test:	bne _lz_lrun_gotten
+		jsr _lz_refill_bits
+		bcc _lz_lrun_back
 
-moff_adjust_lo: .byte %11111110
-                .byte %11101110
-                .byte %10101110
-                .byte %10101110
+_lz_lrun_gotten:
+		tay
+		sta lz_scratch		;Store LSB of run-length
 
-                .byte %11111110
-                .byte %11110110
-                .byte %10110110
-                .byte %10110110
+lz_sector_ptr2	= *+1			;Copy the literal data. Note the
+_lz_lcopy:	lda lz_sector,x		;reverse order of the source
+		inx			;characters
+		beq _lz_lcopy_fetch
+_lz_lcopy_cont:	dey
+		sta (lz_dst),y
+		bne _lz_lcopy
 
-moff_adjust_hi  = *-2
-        ;;      .byte %11111111         ;; -._ two-byte hole
-        ;;      .byte %11111111         ;; -'
-                .byte %01111111
-                .byte %01111101
+		;Time to advance the destination pointer.
+		;Maximum run length literals exit here as a type-bit needs
+		;to be fetched afterwards
+		lda lz_scratch
+		beq _lz_maximum
+		clc
+		adc lz_dst+0
+		sta lz_dst+0
+		bcc *+4
+		inc lz_dst+1
 
-end_of_file:    clc                     ;; -._ two-byte hole
-lower_rts:      rts                     ;; -'
-                .byte %11111110
-                .byte %01111110
+.if BYTESTREAM
+                jsr maybegetblock
+.endif; BYTESTREAM
+		CHUNKCHECK
+
+		;One literal run following another only makes sense if the
+		;first run is of maximum length and had to be split. As that
+		;case has been taken care of we can safely omit the type bit
+		;here
+
+
+		;******** Process match ********
+
+_lz_do_match:	lda #%00100000		;Determine offset length by a two-bit
+_lz_moff_range:	asl lz_bits		;prefix combined with the first run
+		bne *+5			;length bit (where a one identifies
+		jsr _lz_refill_bits	;a two-byte match).
+		rol			;The rest of the length bits will
+		bcc _lz_moff_range	;then follow *after* the offset data
+
+		tay
+		lda _lz_moff_length,y
+		beq _lz_moff_far
+
+_lz_moff_loop:	asl lz_bits		;Load partial offset byte
+		bne *+9
+		sty lz_scratch
+		jsr _lz_refill_bits
+		ldy lz_scratch
+
+		rol
+		bcc _lz_moff_loop
+
+		bmi _lz_moff_near
+
+_lz_moff_far:	sta lz_scratch		;Save the bits we just read as the
+					;high-byte
+
+lz_sector_ptr3	= *+1
+		lda lz_sector,x		;For large offsets we can load the
+		inx			;low-byte straight from the stream
+		bne *+5			;without going throught the shift
+		jsr lz_fetch_sector	;register
+
+;		sec
+		adc _lz_moff_adjust_lo,y
+		bcs _lz_moff_pageok
+		dec lz_scratch
+		sec
+_lz_moff_pageok:
+		adc lz_dst+0
+		sta _lz_match+0
+
+		lda lz_scratch
+		adc _lz_moff_adjust_hi,y
+		sec
+		bcs _lz_moff_join	;(BRA)
+
+_lz_moff_near:
+;		sec			;Special case handling of <8 bit offsets.
+	 	adc _lz_moff_adjust_lo,y;We may can safely ignore the MSB from
+;		sec			;the base adjustment table as the
+		adc lz_dst+0		;maximum base (for a 4/5/6/7 bit
+		sta _lz_match+0		;length sequence) is 113
+		lda #$ff
+_lz_moff_join:	adc lz_dst+1
+		sta _lz_match+1
+
+		cpy #$04		;Get any remaning run length bits
+		lda #%00000001
+		bcs _lz_mrun_gotten
+
+_lz_mrun_loop:	asl lz_bits
+		bne *+5
+		jsr _lz_refill_bits
+		rol
+		asl lz_bits
+		bcc _lz_mrun_loop
+		bne _lz_mrun_gotten
+		jsr _lz_refill_bits
+		bcc _lz_mrun_loop
+
+_lz_mrun_gotten:
+		tay			;A 257-byte (=>$00) run serves as a
+		beq _lz_end_of_file	;sentinel
+
+		sta _lz_mcopy_len
+
+		ldy #$ff		;The copy loop. This needs to be run
+_lz_mcopy:	iny			;forwards since RLE-style matches can
+_lz_match	= *+1			;overlap the destination
+		lda $ffff,y
+		sta (lz_dst),y
+_lz_mcopy_len	= *+1
+		cpy #$ff
+		bne _lz_mcopy
+
+		tya			;Advance destination pointer
+;		sec
+		adc lz_dst+0
+		sta lz_dst+0
+		jmp _lz_mfinish
+
+
+		;******** Fetch some more bits to work with ********
+
+lz_sector_ptr1	= *+1
+_lz_refill_bits:
+		ldy lz_sector,x
+		sty lz_bits
+		inx
+		bne *+5
+		jsr lz_fetch_sector
+;		sec
+		rol lz_bits
+		rts
+
+_lz_end_of_file:
+                ; housekeeping to finish decompression
+.if BYTESTREAM
+    .if LOAD_VIA_KERNAL_FALLBACK
+                lda toloadbt + $01
+                cmp #.lobyte(getckernal)
+                beq decompfinished
+    .endif; LOAD_VIA_KERNAL_FALLBACK
+                stx YPNTRBUF
+.endif; BYTESTREAM
+                stx getcmemadr + $01
+                dec getcmemadr + $02
+.if GETC_API
+                lda getcmemadr + $01
+                sta getcmemfin + $01
+                lda getcmemadr + $02
+                sta getcmemfin + $02
+.endif; GETC_API
+
+                ; decompression finished
+decompfinished: CHUNKEOF
+                rts
+
+
+		;******** Offset coding tables ********
+
+		;This length table is a bit funky. The idea here is to use the
+		;value as the initial value of the shift register instead of
+		;keeping a separate counter.
+		;In other words we iterate until the leading one is shifted out.
+		;Then afterwards the bit just below it (our new sign bit) is set
+		;if the offset is shorter than 8-bits, and conversely it's
+		;cleared if we need to fetch a separate low-byte
+		;as well.
+		;The fact that the sign bit is cleared as a flag is compensated
+		;for in the lz_moff_adjust_hi table
+
+_lz_moff_length:
+		;Long (>2 byte matches)
+		.byte %00011111		;4 bits
+		.byte %00000011		;7 bits
+		.byte %01011111		;10 bits
+		.byte %00001011		;13 bits
+		;Short (2 byte matches)
+		.byte %01011111		;10 bits
+		.byte %00000000		;8 bits
+		.byte %00000111		;6 bits
+		.byte %00111111		;3 bits
+_lz_moff_adjust_lo:
+		;Long (>2 byte matches)
+		.byte %11111110		;1-16
+		.byte %11101110		;17-144
+		.byte %01101110		;145-1168
+		.byte %01101110		;1169-9360
+		;Short (2 byte matches)
+		.byte %10110110		;329-1352
+		.byte %10110110		;73-328
+		.byte %11110110		;9-72
+		.byte %11111110		;1-8
+_lz_moff_adjust_hi = *-2
+		;Long (>2 byte matches)
+;		.byte %11111111		;1-16 (unreferenced)
+;		.byte %11111111		;17-144 (unreferenced)
+		.byte %01111111		;145-1168
+		.byte %01111011		;1169-9360
+		;Short (2 byte matches)
+		.byte %01111110		;329-1352
+		.byte %11111110		;73-328
+;		.byte %11111111		;9-72 (unreferenced)
+;		.byte %11111111		;1-8 (unreferenced)

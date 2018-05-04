@@ -42,7 +42,7 @@ storedadrh: sta desth
             stx byte
 jp18:       stx hi
             lda #$01
-		    asl byte
+            asl byte
             bne *+$05
             jsr getbit
             bcs jp2
@@ -50,7 +50,7 @@ jp4:	    asl byte
             bne *+$05
             jsr getbit
             bcs jp3
-		    asl byte
+            asl byte
             bne *+$05
             jsr getbit
             rol a
@@ -76,7 +76,7 @@ jp5:        cpx hi
             CHUNKCHECK
 
 jp2:        lda #$01
-		    asl byte
+            asl byte
             bne *+$05
             jsr getbit
             bcc jp9
@@ -84,7 +84,7 @@ jp8:   	    asl byte
             bne *+$05
             jsr getbit
             bcs jp10
-		    asl byte
+            asl byte
             bne *+$05
             jsr getbit
             rol a
@@ -98,11 +98,11 @@ jp9:        inx
 jp10:       adc #$01
             sta depseqle
             txa
-		    asl byte
+            asl byte
             bne *+$05
             jsr getbit
             rol a
-		    asl byte
+            asl byte
             bne *+$05
             jsr getbit
             rol a
